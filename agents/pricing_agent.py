@@ -1,55 +1,53 @@
 import os
-from openai import OpenAI
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import SystemMessage, HumanMessage
 
 
 def agente_dynamic_pricing(state: dict) -> dict:
     """
-    Calcula o desconto ótimo para o produto em risco. Se a chave da API estiver ativa,
-    utiliza o LLM (via OpenRouter) para simular o raciocínio complexo de pricing.
+    Agente autónomo de Dynamic Pricing com LangChain e OpenRouter.
     """
-    produto = state.get("produto_atual")
-    if not produto:
-        return state
+    produto = state.get("produto_atual", {})
+    dias = produto.get("dias_para_validade", 3)
+    preco_base = produto.get("preco_base", 0.0)
+    nome = produto.get("nome", "Produto")
+    categoria = produto.get("categoria", "geral")
 
-    print(f"[AGENTE PRICING] A calcular desconto ótimo para: {produto['nome']}...")
-
-    dias = produto["dias_para_validade"]
-
-    # Tentativa de integração com LLM via OpenRouter (se configurado)
     api_key = os.environ.get("OPENROUTER_API_KEY")
+
     if api_key:
         try:
-            client = OpenAI(
-                base_url="https://openrouter.ai/api/v1",
-                api_key=api_key,
+            llm = ChatOpenAI(
+                model="deepseek/deepseek-chat",
+                openai_api_key=api_key,
+                openai_api_base="https://openrouter.ai/api/v1",
+                temperature=0.7
             )
             prompt = f"""
-            És um Agente de Dynamic Pricing num supermercado. 
-            Produto: {produto['nome']}, Categoria: {produto['categoria']}, Preço Base: {produto['preco_base']}€, 
-            Dias para a validade: {dias}, Vendas diárias esperadas: {produto['historico_vendas_diarias']}kg.
-            Define uma percentagem de desconto (entre 0.10 e 0.70) para escoar o produto antes de expirar, maximizando a receita.
-            Responde apenas com o valor numérico do desconto (ex: 0.50 para 50%).
+            És o Agente de Dynamic Pricing da superfície comercial.
+            Artigo: {nome} ({categoria}) | Preço Base: {preco_base}€ | Dias para validade: {dias}.
+            Define o desconto percentual adequado (entre 0.05 e 0.70) para escoar o produto sem destruir margem.
+            Responde no formato: 
+            DESCONTO: [valor decimal, ex: 0.35]
+            RAZAO: [justificação curta em português]
             """
-            response = client.chat.completions.create(
-                model="deepseek/deepseek-chat",  # ou outro modelo via OpenRouter
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=10
-            )
-            desconto_proposto = float(response.choices[0].message.content.strip())
-            print(f"[AGENTE PRICING [LLM]] Desconto gerado por IA: {int(desconto_proposto * 100)}%")
+            resposta = llm.invoke([SystemMessage(content="Aja estritamente como um agente de pricing autónomo."),
+                                   HumanMessage(content=prompt)]).content
+
+            import re
+            match = re.search(r'0\.\d+', resposta)
+            desc_proposto = float(match.group()) if match else (0.65 if dias <= 1 else 0.35)
+
+            return {
+                "desconto_proposto": desc_proposto,
+                "raciocinio_pricing": resposta
+            }
         except Exception as e:
-            print(f"[AGENTE PRICING] Erro ao chamar LLM: {e}. A usar regra heurística de fallback.")
-            desconto_proposto = 0.60 if dias == 1 else 0.30
-    else:
-        # Fallback heurístico definido na proposta
-        if dias == 1:
-            desconto_proposto = 0.60
-        elif dias == 2:
-            desconto_proposto = 0.30
-        else:
-            desconto_proposto = 0.10
+            pass
 
-    state["desconto_proposto"] = desconto_proposto
-    state["destino_proposto"] = "prateleira_desconto"
-
-    return state
+    # Fallback local se não houver chave
+    desc_proposto = 0.65 if dias <= 1 else (0.35 if dias == 2 else 0.15)
+    return {
+        "desconto_proposto": desc_proposto,
+        "raciocinio_pricing": f"Fallback local: Desconto de {int(desc_proposto * 100)}% atribuído com base em {dias} dia(s) de validade."
+    }

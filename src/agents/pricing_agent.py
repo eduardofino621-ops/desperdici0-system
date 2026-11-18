@@ -9,7 +9,7 @@ def agente_dynamic_pricing(state: dict) -> dict:
     """
     produto = state.get("produto_atual", {})
     dias = produto.get("dias_para_validade", 3)
-    preco_base = produto.get("preco_base", 0.0)
+    preco_venda = produto.get("preco_venda", 0.0)
     nome = produto.get("nome", "Produto")
     categoria = produto.get("categoria", "geral")
 
@@ -25,10 +25,10 @@ def agente_dynamic_pricing(state: dict) -> dict:
             )
             prompt = f"""
             És o Agente de Dynamic Pricing da superfície comercial.
-            Artigo: {nome} ({categoria}) | Preço Base: {preco_base}€ | Dias para validade: {dias}.
-            Define o desconto percentual adequado (entre 0.05 e 0.70) para escoar o produto sem destruir margem.
+            Artigo: {nome} ({categoria}) | Preço Base: {preco_venda}€ | Dias para validade: {dias}.
+            Define o desconto percentual adequado (entre 5% e 70%) para escoar o produto sem destruir margem.
             Responde no formato: 
-            DESCONTO: [valor decimal, ex: 0.35]
+            DESCONTO: [valor percentual, ex: 35%]
             RAZAO: [justificação curta em português]
             """
             resposta = llm.invoke([SystemMessage(content="Aja estritamente como um agente de pricing autónomo."),

@@ -1,4 +1,4 @@
-def agente_logistica_doacao(state: dict) -> dict:
+def agente_logistica_doacao(state: dict) -> dict: # Este agente não está a usar IA!
     """
     Agente de Logística e Doação. Determina o destino operacional ideal.
     """
@@ -12,10 +12,10 @@ def agente_logistica_doacao(state: dict) -> dict:
     elif categoria in ["pescado", "frescos"] and dias <= 1:
         destino = "cozinha_interna"
         razao = "Segurança alimentar estrita: carne/pescado fresco a <= 24h desviado para cozinha interna."
-    elif dias >= 2:
+    elif dias >= 2: # ENTRE 2 A 5 DIAS
         destino = "doacao_externa"
         razao = "Prazo temporal seguro (>48h): elegível para doação externa a instituição parceira."
-    else:
+    else: # REVER DIAS DE VALIDADE E PERCEBER PRATELEIRA DE DESCONTO
         destino = "prateleira_desconto"
         razao = "Manutenção em prateleira com etiqueta ESL dinâmica."
 

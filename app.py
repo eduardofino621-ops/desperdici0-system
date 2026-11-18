@@ -83,23 +83,23 @@ if simular_btn:
             # 4. Módulo CSP (Decreto-Lei n.º 166/2013 e restrições operacionais)
             val_csp = validar_regras_csp(prod, desc_proposto, destino)
 
-            if not val_csp["valido"]:
+            if not val_csp["válido"]:
                 for erro in val_csp["erros"]:
                     logs_sessao.append(f"🛡️ **[Módulo CSP / Regulador]** Veto aplicado: *{erro}*")
             else:
                 logs_sessao.append(f"✅ **[Módulo CSP]** Conformidade legal validada com sucesso.")
 
-            preco_final = prod["preco_base"] * (1 - val_csp["desconto_ajustado"])
+            preco_final = prod["preco_venda"] * (1 - val_csp["desconto_ajustado"])
 
             resultados_lote.append({
                 "Produto": prod["nome"],
                 "Categoria": prod["categoria"],
-                "Validade (Dias)": prod["dias_para_validade"],
-                "Preço Base": f"{prod['preco_base']:.2f}€",
+                "Data de Validade": prod["dias_para_validade"],
+                "Preço de Venda": f"{prod['preco_venda']:.2f}€",
                 "Desconto Final": f"{int(val_csp['desconto_ajustado'] * 100)}%",
-                "Preço Final": f"{preco_final:.2f}€",
+                "Preço com Desconto": f"{preco_final:.2f}€",
                 "Destino Final": val_csp["destino_ajustado"].upper().replace("_", " "),
-                "Estado CSP": "Aprovado" if val_csp["valido"] else "Ajustado"
+                "Estado CSP": "Aprovado" if val_csp["válido"] else "Ajustado"
             })
 
         logs_sessao.append("\n🏁 **[Orquestrador]** Ciclo concluído com sucesso. Etiquetas ESL atualizadas.")
@@ -131,10 +131,10 @@ with tab2:
     for i, prod in enumerate(inv_para_esl):
         col_idx = i % num_cols
         with cols[col_idx]:
-            preco_base = prod["preco_base"]
+            preco_venda = prod["preco_venda"]
             dias = prod["dias_para_validade"]
             desc = 0.65 if dias <= 1 else (0.35 if dias == 2 else 0.15)
-            preco_promocional = preco_base * (1 - desc)
+            preco_promocional = preco_venda * (1 - desc)
 
             st.markdown(f"""
             <div style="border: 2px solid #e0e0e0; padding: 15px; border-radius: 10px; text-align: center; background-color: #ffffff; margin-bottom: 15px; box-shadow: 2px 2px 5px rgba(0,0,0,0.05);">
@@ -142,7 +142,7 @@ with tab2:
                 <span style="background-color: #fee2e2; color: #b91c1c; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">Validade: {dias} dia(s)</span>
                 <p style="font-size: 10px; background-color: #f3f4f6; padding: 4px; border-radius: 4px; font-family: monospace; margin-top: 8px;">2D: {prod['codigo_2d']}</p>
                 <hr style="margin: 10px 0;">
-                <p style="font-size: 13px; text-decoration: line-through; color: #6b7280; margin-bottom: 0;">Preço Base: {preco_base:.2f}€</p>
+                <p style="font-size: 13px; text-decoration: line-through; color: #6b7280; margin-bottom: 0;">Preço Base: {preco_venda:.2f}€</p>
                 <h2 style="color: #ef4444; margin: 0;">{preco_promocional:.2f}€</h2>
                 <p style="font-size: 11px; background-color: #fef3c7; color: #92400e; padding: 3px; border-radius: 4px; margin-top: 5px;">Desconto Lote: -{int(desc * 100)}%</p>
             </div>

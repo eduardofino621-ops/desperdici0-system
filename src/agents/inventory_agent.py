@@ -1,6 +1,6 @@
 import os
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import SystemMessage, HumanMessage # em vez do Microsoft AutoGen
 
 
 def agente_controlo_inventario(state: dict) -> dict:
@@ -22,9 +22,11 @@ def agente_controlo_inventario(state: dict) -> dict:
             llm = ChatOpenAI(
                 model="deepseek/deepseek-chat",
                 openai_api_key=api_key,
-                openai_api_base="https://openrouter.ai/api/v1",
-                temperature=0.7
+                openai_api_base="https://openrouter.ai/api/v1", # aceder ao modelo da OpenAI
+                temperature=0.7 # criativo
             )
+
+            # Acrescentar data de validade e data today()
             prompt = f"""
             És o Agente de Controlo de Inventário de uma superfície comercial.
             Analisa o seguinte lote lido via código GS1 DataMatrix (2D):
@@ -43,6 +45,7 @@ def agente_controlo_inventario(state: dict) -> dict:
                 "parecer_inventario": resposta,
                 "risco_critico": dias <= 1 or (quantidade / max(0.1, vendas)) > dias
             }
+        # controlo para não dividir por zero
         except Exception:
             pass
 

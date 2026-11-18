@@ -6,7 +6,7 @@ def validar_regras_csp(produto: dict, desconto_proposto: float, destino: str) ->
     dias = produto["dias_para_validade"]
     categoria = produto["categoria"]
     quantidade = produto.get("quantidade_kg", 0.0)
-    preco_base = produto.get("preco_base", 0.0)
+    preco_venda = produto.get("preco_venda", 0.0)
 
     erros = []
 
@@ -42,16 +42,16 @@ def validar_regras_csp(produto: dict, desconto_proposto: float, destino: str) ->
         destino = "cozinha_interna"
 
     # Regra 5: Margem Mínima Operacional (O preço final não pode ser inferior a 15% do preço base)
-    preco_final = preco_base * (1 - desconto_proposto)
-    if preco_final < (preco_base * 0.15) and destino == "prateleira_desconto":
+    preco_final = preco_venda * (1 - desconto_proposto)
+    if preco_final < (preco_venda * 0.15) and destino == "prateleira_desconto":
         erros.append(
             "Restrição CSP Financeira: O preço com desconto viola o limiar de sustentabilidade operacional (mínimo de 15% do valor base).")
         desconto_proposto = 0.85  # Limitar o desconto máximo a 85% (deixando 15% de preço base)
 
     # Regra 6: Alocação de Sacos Surpresa por Quantidade Mínima
     if destino == "sacos_surpresa" and quantidade < 5.0:
-        erros.append(
-            "Restrição CSP Logística: Quantidade insuficiente (< 5kg) para criar saco surpresa dedicado; redirecionado para prateleira.")
+        erros.append( 
+            "Restrição CSP Logística: Quantidade insuficiente (< 5U) para criar saco surpresa dedicado; redirecionado para prateleira.")
         destino = "prateleira_desconto"
 
     # Regra 7: Lacticínios com menos de 24h têm teto de desconto de 50%
@@ -60,10 +60,10 @@ def validar_regras_csp(produto: dict, desconto_proposto: float, destino: str) ->
             "Restrição CSP Lacticínios: Lacticínios no último dia de validade têm limite máximo de desconto de 50%.")
         desconto_proposto = 0.50
 
-    valido = len(erros) == 0
+    válido = len(erros) == 0
 
     return {
-        "valido": valido,
+        "válido": válido,
         "erros": erros,
         "desconto_ajustado": desconto_proposto,
         "destino_ajustado": destino

@@ -5,11 +5,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from simulation.mock_db import INVENTARIO_MOCK
-from agents.inventory_agent import agente_controlo_inventario
-from agents.pricing_agent import agente_dynamic_pricing
-from agents.logistics_agent import agente_logistica_doacao
-from csp.constraints import validar_regras_csp
+from src.simulation.mock_db import INVENTARIO_MOCK
+from src.agents.inventory_agent import agente_controlo_inventario
+from src.agents.pricing_agent import agente_dynamic_pricing
+from src.agents.logistics_agent import agente_logistica_doacao
+from src.csp.constraints import validar_regras_csp
 
 # Configuração da Página Streamlit
 st.set_page_config(

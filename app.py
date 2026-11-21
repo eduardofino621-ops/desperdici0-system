@@ -508,7 +508,7 @@ def executar_orquestracao(cenario_perturbacao: str) -> None:
             "Categoria": prod["categoria"].capitalize(),
             "Stock": f"{lote['quantidade_disponivel']:.1f} {unidade}",
             "Validade": f"{formatar_data_pt(lote['data_validade'])} ({dias}d)",
-            "PVP Base": formatar_eur(pvp),
+            "PVP": formatar_eur(pvp),
             "Campanha": f"-{int(desc_campanha * 100)}%" if desc_campanha > 0 else "—",
             "Período Campanha": periodo_campanha if desc_campanha > 0 else "—",
             "Desc. Validade": f"-{int(lote['desconto_validade'] * 100)}%" if lote["desconto_validade"] > 0 else "—",

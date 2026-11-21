@@ -21,7 +21,7 @@ def validar_regras_csp(produto: dict, desconto_proposto: float, destino: str) ->
         destino = "prateleira_desconto"
 
     # Regra 2: Descontos em frescos não podem exceder 70% (evitar dumping / práticas predatórias)
-    if categoria in ["frescos", "pescado", "laticinios", "fruta"] and desconto_proposto > 0.70:
+    if categoria in ["carne", "pescado", "laticinios", "fruta", "charcurtaria"] and desconto_proposto > 0.70:
         erros.append("Bloqueio CSP: Desconto excede o limite máximo legal de 70% para frescos.")
         desconto_proposto = 0.70  # Correção automática
 
@@ -36,7 +36,7 @@ def validar_regras_csp(produto: dict, desconto_proposto: float, destino: str) ->
     # ----------------------------------------------------
 
     # Regra 4: Segurança Alimentar Estrita (Carne ou Pescado fresco a <= 1 dia nunca vão para doação)
-    if categoria in ["pescado", "frescos"] and dias <= 1 and destino == "doacao_externa":
+    if categoria in ["pescado", "carne"] and dias <= 1 and destino == "doacao_externa":
         erros.append(
             "Bloqueio CSP de Segurança: Carne ou pescado com 24h ou menos não pode ser doado, exigindo redirecionamento interno.")
         destino = "cozinha_interna"

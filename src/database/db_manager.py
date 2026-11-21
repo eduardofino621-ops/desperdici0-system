@@ -11,7 +11,7 @@ from datetime import date, datetime, timedelta
 #   (nome_base, marca_real, [(rotulo_formato, unidade_medida, conteudo_liquido_kg_L, preco_embalagem_eur), ...])
 # ==============================================================================
 CATALOGO_CURADO = {
-    "frescos": {
+"carne": {
         "un_ref": "kg", "margem": 0.05, "descarte": 0.75, "elasticidade": 1.55, "conservacao": "refrigerado_0_4C",
         "artigos": [
             ("Bife de Vazia Maturado", "Talho Seleção", [("Granel 1kg", "kg", 1.00, 18.99), ("Cuvete 400g", "un", 0.40, 7.89), ("Cuvete 800g", "un", 0.80, 15.29)]),
@@ -72,15 +72,22 @@ CATALOGO_CURADO = {
     "padaria": {
         "un_ref": "kg", "margem": 0.10, "descarte": 0.15, "elasticidade": 1.80, "conservacao": "ambiente",
         "artigos": [
-            ("Pão de Centeio", "Forno do Dia", [("Unidade 400g", "un", 0.40, 1.59), ("Fatiado 700g", "un", 0.70, 2.49)]),
+            ("Pão de Centeio", "Forno do Dia", [("Unidade Avulso (80g)", "un", 0.08, 0.32), ("Unidade 400g", "un", 0.40, 1.59), ("Unidade 600g", "un", 0.60, 2.29), ("Fatiado 800g", "un", 0.80, 2.89)]),
+            ("Bola de Mistura", "Padaria Tradicional", [("Unidade Avulso (80g)", "un", 0.08, 0.28), ("Unidade 400g", "un", 0.40, 1.39), ("Unidade 600g", "un", 0.60, 1.99), ("Unidade 800g", "un", 0.80, 2.59)]),
+            ("Pão da Avó", "Forno de Lenha", [("Unidade Avulso (80g)", "un", 0.08, 0.35), ("Unidade 400g", "un", 0.40, 1.69), ("Unidade 600g", "un", 0.60, 2.39), ("Unidade 800g", "un", 0.80, 2.99)]),
+            ("Pão de Beterraba", "Artesanal", [("Unidade Avulso (80g)", "un", 0.08, 0.38), ("Unidade 400g", "un", 0.40, 1.79), ("Unidade 600g", "un", 0.60, 2.59), ("Unidade 800g", "un", 0.80, 3.29)]),
+            ("Pão Bijou", "Padaria Tradicional", [("Unidade Avulso (80g)", "un", 0.08, 0.25), ("Pack 4 (320g)", "pack", 0.32, 0.95), ("Pack 6 (480g)", "pack", 0.48, 1.39)]),
+            ("Carcaça Portuguesa", "Forno do Dia", [("Unidade Avulso (80g)", "un", 0.08, 0.24), ("Pack 4 (320g)", "pack", 0.32, 0.92), ("Pack 6 (480g)", "pack", 0.48, 1.35)]),
+            ("Chapata de Cereais", "Massa Mãe", [("Unidade Avulso (80g)", "un", 0.08, 0.36), ("Unidade 400g", "un", 0.40, 1.69), ("Unidade 600g", "un", 0.60, 2.49)]),
+            ("Pão de Mafra", "Padaria Tradicional", [("Unidade Avulso (90g)", "un", 0.09, 0.32), ("Unidade 400g", "un", 0.40, 1.49), ("Unidade 750g", "un", 0.75, 2.39)]),
             ("Broa de Milho", "Moinho Velho", [("Unidade 500g", "un", 0.50, 1.69), ("Unidade 800g", "un", 0.80, 2.49)]),
-            ("Pão de Mafra", "Padaria Tradicional", [("Unidade 450g", "un", 0.45, 1.49), ("Unidade 750g", "un", 0.75, 2.29)]),
-            ("Papo-Seco Tradicional", "Forno do Dia", [("Unidade 60g", "un", 0.06, 0.19), ("Pack 6 Unidades", "pack", 0.36, 1.05)]),
-            ("Croissant Brioche", "Arte do Pão", [("Unidade 80g", "un", 0.08, 0.89), ("Pack 4 Unidades", "pack", 0.32, 3.19)]),
-            ("Pão Integral com Sementes", "Cereal Vita", [("Fatiado 500g", "un", 0.50, 2.19), ("Fatiado 750g", "un", 0.75, 2.99)]),
-            ("Baguete Rústica", "Casa do Pão", [("Unidade 250g", "un", 0.25, 0.99), ("Pack 2 Unidades", "pack", 0.50, 1.79)]),
-            ("Pão com Chouriço", "Forno do Dia", [("Unidade 160g", "un", 0.16, 1.69), ("Pack 2 Unidades", "pack", 0.32, 3.09)]),
-            ("Pastel de Nata", "Fabrico Próprio", [("Pack 4 Unidades", "pack", 0.24, 3.49), ("Caixa 6 Unidades", "pack", 0.36, 4.99)]),
+            ("Papo-Seco", "Forno do Dia", [("Unidade Avulso (60g)", "un", 0.06, 0.19), ("Pack 4 (240g)", "pack", 0.24, 0.72), ("Pack 6 (360g)", "pack", 0.36, 1.05)]),
+            ("Croissant Brioche", "Arte do Pão", [("Unidade Avulso (80g)", "un", 0.08, 0.89), ("Pack 4 (320g)", "pack", 0.32, 3.19)]),
+            ("Croissant Folhado", "Arte do Pão", [("Unidade Avulso (75g)", "un", 0.075, 0.95), ("Pack 4 (300g)", "pack", 0.30, 3.39)]),
+            ("Croissant com Chocolate", "Arte do Pão", [("Unidade Avulso (90g)", "un", 0.09, 1.15), ("Pack 4 (360g)", "pack", 0.36, 3.99)]),
+            ("Baguete Rústica", "Casa do Pão", [("Unidade Avulso (250g)", "un", 0.25, 0.99), ("Pack 2 (500g)", "pack", 0.50, 1.79)]),
+            ("Pão com Chouriço", "Forno do Dia", [("Unidade Avulso (160g)", "un", 0.16, 1.69), ("Pack 2 (320g)", "pack", 0.32, 3.09)]),
+            ("Regueifa", "Padaria Tradicional", [("Unidade 500g", "un", 0.50, 1.99), ("Unidade 750g", "un", 0.75, 2.89)]),
         ]
     },
     "fruta": {
@@ -298,7 +305,7 @@ class GestorBaseDadosTemporal:
                 vendas_dia = 3.0
                 cfg = CATALOGO_CURADO[cat_nome]
             elif idx == 2:
-                cat_nome = "frescos"
+                cat_nome = "carne"
                 nome = "Bife de Vazia Maturado"
                 unidade_prod = "kg"
                 conteudo_liq = 1.0

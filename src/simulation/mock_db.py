@@ -1,7 +1,9 @@
 from datetime import date
 from src.database.db_manager import GestorBaseDadosTemporal
 
-gestor_db = GestorBaseDadosTemporal(total_produtos=1000, seed=2026)
+gestor_db = GestorBaseDadosTemporal(total_produtos=160, seed=2026)
+#gestor_db = GestorBaseDadosTemporal(total_produtos=1000, seed=2026)
+
 CATALOGO_PRODUTOS, INVENTARIO_LOTES = gestor_db.gerar_dataset_temporal(data_ref=date.today())
 
 

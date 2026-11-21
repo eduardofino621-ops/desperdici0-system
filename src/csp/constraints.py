@@ -45,7 +45,7 @@ def validar_regras_csp(
         }
 
     # Regra 1: Segurança Alimentar Estrita
-    if categoria in ["pescado", "frescos"] and dias <= 1 and destino_ajustado == "doacao_externa":
+    if categoria in ["pescado", "carne"] and dias <= 1 and destino_ajustado == "doacao_externa":
         erros.append(
             "Bloqueio CSP de Segurança: Carne ou pescado com 24h ou menos não pode ser doado externamente; redirecionado para cozinha interna."
         )
@@ -88,7 +88,7 @@ def validar_regras_csp(
         desconto_ajustado = desconto_campanha
 
     # Regra 6: Teto máximo legal de 70% em perecíveis
-    if categoria in ["frescos", "pescado", "laticinios", "fruta"] and desconto_ajustado > 0.70:
+    if categoria in ["carne", "pescado", "laticinios", "fruta", "charcurtaria"] and desconto_ajustado > 0.70:
         erros.append("Bloqueio CSP Legal: Desconto excede o limite máximo de 70% para perecíveis; ajustado para 70%.")
         desconto_ajustado = 0.70
 

@@ -418,7 +418,7 @@ def executar_orquestracao(cenario_perturbacao: str) -> None:
     elif cenario_perturbacao == "Pico de Stock Excedente nas Frutas/Frescos":
         for lote in lotes_copia:
             prod = catalogo_map.get(lote["produto_id"], {})
-            if prod.get("categoria") in ["frescos", "fruta"]:
+            if prod.get("categoria") in ["carne", "fruta"]:
                 lote["quantidade_disponivel"] = round(lote["quantidade_disponivel"] * 2.5, 1)
 
     resultados_lote = []

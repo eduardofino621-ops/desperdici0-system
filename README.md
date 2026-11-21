@@ -72,4 +72,4 @@ O sucesso do sistema é validado através da **Taxa de Sucesso (TS)**, comparand
 ## 👥 Autores
 
 * Eduardo Coelho Fino (DEI-FCT, Universidade de Coimbra)
-* Glória da Costa e Guimarães (DEI-FCT, Universidade de Coimbra)
+* Glória Costa Guimarães (DEI-FCT, Universidade de Coimbra)

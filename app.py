@@ -858,7 +858,6 @@ with tab2:
                     f'</div>'
                     f'<div class="esl-middle">'
                     f'<div>'
-                    f'<div class="esl-pum">PREÇO BASE</div>'
                     f'<div class="esl-strike-wrap">PVP {formatar_eur(grupo["preco_base"])} <span class="esl-unit-tag">SACO</span></div>'
                     f'</div>'
                     f'<div class="esl-saco-stock">{qtd_disp} {"saco disp." if qtd_disp == 1 else "sacos disp."}</div>'

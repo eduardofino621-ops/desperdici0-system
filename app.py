@@ -564,7 +564,7 @@ precisa_recalcular = (
 )
 
 if precisa_recalcular:
-    with st.spinner("A sincronizar base de dados em tempo real (1.000 lotes produtos) e a executar agentes..."):
+    with st.spinner("A sincronizar base de dados em tempo real (1.000 lotes) e a executar agentes..."):
         executar_orquestracao(perturbacao)
 
 data_ativa = st.session_state.data_referencia_ativa
@@ -606,7 +606,7 @@ with tab1:
         st.markdown(
             f'<div class="kpi-card"><div class="kpi-title">Catálogo Ativo</div>'
             f'<div class="kpi-value">{total_prods}</div>'
-            f'<div class="kpi-sub">{len(lotes_atual)} lotes físicos</div></div>',
+            f'<div class="kpi-sub">{len(lotes_atual)} lotes</div></div>',
             unsafe_allow_html=True,
         )
     with c2:

@@ -1,5 +1,4 @@
-import os
-import json
+import re
 import random
 import sqlite3
 from pathlib import Path
@@ -11,7 +10,7 @@ from datetime import date, datetime, timedelta
 #   (nome_base, marca_real, [(rotulo_formato, unidade_medida, conteudo_liquido_kg_L, preco_embalagem_eur), ...])
 # ==============================================================================
 CATALOGO_CURADO = {
-"carne": {
+    "carne": {
         "un_ref": "kg", "margem": 0.05, "descarte": 0.75, "elasticidade": 1.55, "conservacao": "refrigerado_0_4C",
         "artigos": [
             ("Bife de Vazia Maturado", "Talho Seleção", [("Granel 1kg", "kg", 1.00, 18.99), ("Cuvete 400g", "un", 0.40, 7.89), ("Cuvete 800g", "un", 0.80, 15.29)]),
@@ -163,11 +162,11 @@ def _calcular_periodo_semana(data_ref: date) -> str:
 
 class GestorBaseDadosTemporal:
     """
-    Gere o catálogo de artigos reais de supermercado e respetivos lotes físicos em SQLite,
+    Gere o catálogo de 200 artigos reais de supermercado e 1.000 lotes em SQLite,
     com datas de validade dinâmicas relativas à data de execução (date.today()).
     """
 
-    def __init__(self, total_produtos: int = 150, seed: int = 2026, db_path: str = "data/desperdicio.db"):
+    def __init__(self, total_produtos: int = 200, seed: int = 2026, db_path: str = "data/desperdicio.db"):
         self.total_produtos = total_produtos
         self.seed = seed
         self.db_path = Path(db_path)
@@ -248,8 +247,9 @@ class GestorBaseDadosTemporal:
                     nome_completo = f"{artigo_nome} {marca} ({rotulo_fmt})"
                     if nome_completo in nomes_reservados:
                         continue
-                    # Bebidas e azeite usam litro como unidade de referência para PUM
-                    un_ref = "L" if ("ml" in rotulo_fmt or "L" in rotulo_fmt) else cfg["un_ref"]
+                    # Deteta unidades de volume reais (ex: 500ml, 50cl, 1L, 0,75L) sem confundir com "Lombo" ou "Lata"
+                    eh_volume = bool(re.search(r"\d\s*(?:ml|cl|L)\b", rotulo_fmt))
+                    un_ref = "L" if eh_volume else cfg["un_ref"]
                     pool.append({
                         "nome": nome_completo,
                         "categoria": cat_nome,
@@ -268,8 +268,8 @@ class GestorBaseDadosTemporal:
 
     def gerar_dataset_temporal(self, data_ref: date | None = None) -> tuple[list[dict], list[dict]]:
         """
-        Gera o catálogo realista e os lotes com datas relativas a `data_ref` (por omissão `date.today()`),
-        persiste ambos na base de dados SQLite e devolve (catalogo, lotes).
+        Gera o catálogo realista (200 produtos) e os respetivos 1.000 lotes (5 por produto)
+        com datas relativas a `data_ref` (por omissão `date.today()`), persiste em SQLite e devolve (catalogo, lotes).
         """
         if data_ref is None:
             data_ref = date.today()
@@ -301,38 +301,53 @@ class GestorBaseDadosTemporal:
             prod_id = f"PROD-{idx:04d}"
             gtin = _gerar_gtin13(idx)
 
+            # 1.º BLOCO: Definição do produto no catálogo
             if idx == 1:
-                # 5 lotes para o Salmão (3 em janela crítica 1–4d + 2 de reposição futura)
-                especificacoes_lotes = [
-                    (1, 7.0, 4),
-                    (2, 11.0, 3),
-                    (4, 10.0, 1),
-                    (8, 12.0, 1),
-                    (12, 15.0, 0),
-                ]
-            elif tem_validade_curta:
-                # 1 ou 2 lotes em janela crítica (1–5d) + restantes lotes escalonados (6–60d) = 5 lotes exatos
-                dias_exp_1 = rng.randint(1, 5)
-                qtd_1 = max(6.0, round(vendas_dia * dias_exp_1 * rng.uniform(1.35, 2.2), 1))
-                especificacoes_lotes = [(dias_exp_1, qtd_1, rng.randint(2, 6))]
-
-                if idx % 4 == 0 and dias_exp_1 < 5:
-                    dias_exp_2 = min(5, dias_exp_1 + rng.randint(1, 2))
-                    especificacoes_lotes.append((dias_exp_2, max(5.0, round(vendas_dia * 1.6, 1)), 1))
-
-                # Completa até 5 lotes com datas futuras (> 5 dias) para manter a simulação rápida
-                faltam = 5 - len(especificacoes_lotes)
-                dias_futuros = sorted(rng.sample(range(7, 61), faltam))
-                for d_fut in dias_futuros:
-                    qtd_fut = max(5.0, round(vendas_dia * rng.uniform(1.5, 4.0), 1))
-                    especificacoes_lotes.append((d_fut, qtd_fut, rng.randint(0, 3)))
+                cat_nome = "pescado"
+                nome = "Salmão Fresco Atlântico"
+                unidade_prod = "kg"
+                conteudo_liq = 1.0
+                un_ref = "kg"
+                pvp = 18.50
+                vendas_dia = 3.0
+                cfg = CATALOGO_CURADO[cat_nome]
+            elif idx == 2:
+                cat_nome = "carne"
+                nome = "Bife de Vazia Maturado"
+                unidade_prod = "kg"
+                conteudo_liq = 1.0
+                un_ref = "kg"
+                pvp = 12.99
+                vendas_dia = 5.0
+                cfg = CATALOGO_CURADO[cat_nome]
+            elif idx == 3:
+                cat_nome = "laticinios"
+                nome = "Iogurte Natural (Pack 4)"
+                unidade_prod = "pack"
+                conteudo_liq = 0.50
+                un_ref = "kg"
+                pvp = 1.80
+                vendas_dia = 10.0
+                cfg = CATALOGO_CURADO[cat_nome]
+            elif idx == 4:
+                cat_nome = "mercearia"
+                nome = "Azeite Virgem Extra 0,75L"
+                unidade_prod = "un"
+                conteudo_liq = 0.75
+                un_ref = "L"
+                pvp = 7.49
+                vendas_dia = 4.0
+                cfg = CATALOGO_CURADO[cat_nome]
             else:
-                # 5 lotes com datas distintas escalonadas entre 6 e 60 dias
-                dias_lotes = sorted(rng.sample(range(6, 61), 5))
-                especificacoes_lotes = [
-                    (d_exp, max(5.0, round(vendas_dia * rng.uniform(1.5, 4.0), 1)), rng.randint(0, 8))
-                    for d_exp in dias_lotes
-                ]
+                spec = artigos_reais[idx - 5]
+                cat_nome = spec["categoria"]
+                nome = spec["nome"]
+                unidade_prod = spec["unidade_medida"]
+                conteudo_liq = spec["conteudo_liquido"]
+                un_ref = spec["unidade_referencia"]
+                pvp = spec["pvp"]
+                vendas_dia = round(rng.uniform(2.0, 12.0), 1)
+                cfg = spec
 
             custo = round(pvp * rng.uniform(0.55, 0.68), 2)
 
@@ -364,20 +379,35 @@ class GestorBaseDadosTemporal:
 
             tem_validade_curta = idx in indices_validade_curta
 
+            # 2.º BLOCO: Geração de exatamente 5 lotes por produto (200 x 5 = 1.000 lotes)
             if idx == 1:
-                especificacoes_lotes = [(1, 7.0, 4), (2, 11.0, 3), (4, 10.0, 1)]
+                especificacoes_lotes = [
+                    (1, 7.0, 4),
+                    (2, 11.0, 3),
+                    (4, 10.0, 1),
+                    (8, 12.0, 1),
+                    (12, 15.0, 0),
+                ]
             elif tem_validade_curta:
-                dias_exp = rng.randint(1, 5)
-                qtd = round(vendas_dia * dias_exp * rng.uniform(1.35, 2.2), 1)
-                especificacoes_lotes = [(dias_exp, max(6.0, qtd), rng.randint(2, 6))]
-                if idx % 4 == 0:
-                    dias_exp_2 = min(5, dias_exp + rng.randint(1, 2))
-                    if dias_exp_2 > dias_exp:
-                        especificacoes_lotes.append((dias_exp_2, round(vendas_dia * 1.6, 1), 1))
+                dias_exp_1 = rng.randint(1, 5)
+                qtd_1 = max(6.0, round(vendas_dia * dias_exp_1 * rng.uniform(1.35, 2.2), 1))
+                especificacoes_lotes = [(dias_exp_1, qtd_1, rng.randint(2, 6))]
+
+                if idx % 4 == 0 and dias_exp_1 < 5:
+                    dias_exp_2 = min(5, dias_exp_1 + rng.randint(1, 2))
+                    especificacoes_lotes.append((dias_exp_2, max(5.0, round(vendas_dia * 1.6, 1)), 1))
+
+                faltam = 5 - len(especificacoes_lotes)
+                dias_futuros = sorted(rng.sample(range(7, 61), faltam))
+                for d_fut in dias_futuros:
+                    qtd_fut = max(5.0, round(vendas_dia * rng.uniform(1.5, 4.0), 1))
+                    especificacoes_lotes.append((d_fut, qtd_fut, rng.randint(0, 3)))
             else:
-                dias_exp = rng.randint(6, 60)
-                qtd = round(vendas_dia * rng.uniform(1.5, 4.0), 1)
-                especificacoes_lotes = [(dias_exp, max(5.0, qtd), rng.randint(2, 10))]
+                dias_lotes = sorted(rng.sample(range(6, 61), 5))
+                especificacoes_lotes = [
+                    (d_exp, max(5.0, round(vendas_dia * rng.uniform(1.5, 4.0), 1)), rng.randint(0, 8))
+                    for d_exp in dias_lotes
+                ]
 
             for dias_exp, qtd, dias_desde_entrada in especificacoes_lotes:
                 contador_lote += 1
@@ -443,8 +473,7 @@ class GestorBaseDadosTemporal:
 
     def registar_telemetria_sqlite(self, data_ref: date, lotes: list[dict], cenario: str) -> tuple[bool, str]:
         """
-        Mantém compatibilidade com o método chamado no app.py, registando o histórico
-        diretamente na tabela `telemetria_execucoes` da base de dados SQLite local.
+        Regista o histórico de execuções na tabela `telemetria_execucoes` da base de dados SQLite local.
         """
         lotes_validade = [l for l in lotes if l.get("desconto_validade", 0.0) > 0]
         desc_medio = (

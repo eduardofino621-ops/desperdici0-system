@@ -23,7 +23,8 @@ CATALOGO_CURADO = {
             ("Bifes de Peru", "Valouro", [("Cuvete 400g", "un", 0.40, 3.49), ("Cuvete 800g", "un", 0.80, 6.69)]),
             ("Hambúrguer de Novilho Angus", "Talho Seleção", [("Pack 2x150g", "pack", 0.30, 3.99), ("Pack 4x150g", "pack", 0.60, 7.49)]),
             ("Entrecosto de Porco", "Beira Tradicional", [("Cuvete 700g", "un", 0.70, 4.89), ("Pack 1,2kg", "pack", 1.20, 7.99)]),
-            ("Picanha Maturada", "Monte Alentejano", [("Peça 900g", "un", 0.90, 16.99), ("Peça 1,3kg", "un", 1.30, 23.99)]),
+            ("Picanha Maturada", "Açores", [("Peça 900g", "un", 0.90, 16.99), ("Peça 1,3kg", "un", 1.30, 23.99)]),
+            ("Bifanas de Porco", "Talho Seleção", [("Cuvete 400g", "un", 0.40, 3.29), ("Cuvete 800g", "un", 0.80, 6.19)]),
         ]
     },
     "charcutaria": {
@@ -38,6 +39,7 @@ CATALOGO_CURADO = {
             ("Paio York Fatiado", "Nobre", [("Cuvete 120g", "un", 0.12, 1.89), ("Peça 400g", "un", 0.40, 5.49)]),
             ("Alheira de Mirandela IGP", "Eurofumeiro", [("Unidade 220g", "un", 0.22, 2.19), ("Pack 2x220g", "pack", 0.44, 3.99)]),
             ("Bacon Fumado em Tiras", "Izidoro", [("Cuvete 200g", "un", 0.20, 2.39), ("Pack 2x150g", "pack", 0.30, 3.39)]),
+            ("Salpicão Tradicional", "Beira Lamego", [("Cuvete 100g", "un", 0.10, 2.19), ("Peça 300g", "un", 0.30, 5.49)]),
         ]
     },
     "pescado": {
@@ -52,6 +54,7 @@ CATALOGO_CURADO = {
             ("Polvo Limpo Fresco", "Norte Mar", [("Cuvete 600g", "un", 0.60, 9.99), ("Peça 1,2kg", "un", 1.20, 18.99)]),
             ("Sardinha Fresca", "Costa Portuguesa", [("Cuvete 500g", "un", 0.50, 2.99), ("Granel 1kg", "kg", 1.00, 5.49)]),
             ("Lulas Limpas Frescas", "Ria Fresca", [("Cuvete 400g", "un", 0.40, 5.29), ("Cuvete 800g", "un", 0.80, 9.99)]),
+            ("Tranche de Corvina", "Mar Atlântico", [("Cuvete 350g", "un", 0.35, 5.19), ("Cuvete 700g", "un", 0.70, 9.89)]),
         ]
     },
     "laticinios": {
@@ -67,6 +70,7 @@ CATALOGO_CURADO = {
             ("Requeijão de Ovelha", "Seia DOP", [("Unidade 200g", "un", 0.20, 1.99), ("Pack 2x200g", "pack", 0.40, 3.69)]),
             ("Nata para Culinária", "Parmalat", [("Pacote 200ml", "un", 0.20, 0.99), ("Pack 3x200ml", "pack", 0.60, 2.69)]),
             ("Queijo Fresco Tradicional", "Saloio", [("Pack 2x85g", "pack", 0.17, 1.49), ("Pack 4x85g", "pack", 0.34, 2.69)]),
+            ("Kefir Natural", "Nestlé", [("Garrafa 500g", "un", 0.50, 1.79), ("Garrafa 1kg", "un", 1.00, 3.19)]),
         ]
     },
     "padaria": {
@@ -102,6 +106,7 @@ CATALOGO_CURADO = {
             ("Kiwi Verde Nacional", "Vale Verde", [("Cuvete 500g", "un", 0.50, 1.89), ("Saco 1kg", "pack", 1.00, 3.39)]),
             ("Uva Branca sem Grainha", "Horta Fresca", [("Cuvete 500g", "un", 0.50, 2.19), ("Cuvete 750g", "un", 0.75, 2.99)]),
             ("Framboesas Frescas", "Quinta Bio", [("Cuvete 125g", "un", 0.125, 1.99), ("Cuvete 250g", "un", 0.25, 3.59)]),
+            ("Manga Maturada", "Frutas do Sol", [("Unidade 450g", "un", 0.45, 1.69), ("Pack 2x450g", "pack", 0.90, 3.19)]),
         ]
     },
     "mercearia": {
@@ -133,6 +138,7 @@ CATALOGO_CURADO = {
             ("Bebida de Amêndoa sem Açúcar", "Alpro", [("Pacote 1L", "un", 1.00, 2.19), ("Pack 3x1L", "pack", 3.00, 6.09)]),
             ("Água com Gás Limão", "Frize", [("Garrafa 25cl", "un", 0.25, 0.85), ("Pack 4x25cl", "pack", 1.00, 2.99)]),
             ("Chá Frio Pêssego", "Lipton Ice Tea", [("Garrafa 1,5L", "un", 1.50, 1.69), ("Pack 6x33cl", "pack", 1.98, 3.49)]),
+            ("Sumo de Maçã 100%", "Compal", [("Pacote 1L", "un", 1.00, 1.69), ("Pack 3x200ml", "pack", 0.60, 1.49)]),
         ]
     },
 }
@@ -296,51 +302,37 @@ class GestorBaseDadosTemporal:
             gtin = _gerar_gtin13(idx)
 
             if idx == 1:
-                cat_nome = "pescado"
-                nome = "Salmão Fresco Atlântico"
-                unidade_prod = "kg"
-                conteudo_liq = 1.0
-                un_ref = "kg"
-                pvp = 18.50
-                vendas_dia = 3.0
-                cfg = CATALOGO_CURADO[cat_nome]
-            elif idx == 2:
-                cat_nome = "carne"
-                nome = "Bife de Vazia Maturado"
-                unidade_prod = "kg"
-                conteudo_liq = 1.0
-                un_ref = "kg"
-                pvp = 12.99
-                vendas_dia = 5.0
-                cfg = CATALOGO_CURADO[cat_nome]
-            elif idx == 3:
-                cat_nome = "laticinios"
-                nome = "Iogurte Natural (Pack 4)"
-                unidade_prod = "pack"
-                conteudo_liq = 0.50
-                un_ref = "kg"
-                pvp = 1.80
-                vendas_dia = 10.0
-                cfg = CATALOGO_CURADO[cat_nome]
-            elif idx == 4:
-                cat_nome = "mercearia"
-                nome = "Azeite Virgem Extra 0,75L"
-                unidade_prod = "un"
-                conteudo_liq = 0.75
-                un_ref = "L"
-                pvp = 7.49
-                vendas_dia = 4.0
-                cfg = CATALOGO_CURADO[cat_nome]
+                # 5 lotes para o Salmão (3 em janela crítica 1–4d + 2 de reposição futura)
+                especificacoes_lotes = [
+                    (1, 7.0, 4),
+                    (2, 11.0, 3),
+                    (4, 10.0, 1),
+                    (8, 12.0, 1),
+                    (12, 15.0, 0),
+                ]
+            elif tem_validade_curta:
+                # 1 ou 2 lotes em janela crítica (1–5d) + restantes lotes escalonados (6–60d) = 5 lotes exatos
+                dias_exp_1 = rng.randint(1, 5)
+                qtd_1 = max(6.0, round(vendas_dia * dias_exp_1 * rng.uniform(1.35, 2.2), 1))
+                especificacoes_lotes = [(dias_exp_1, qtd_1, rng.randint(2, 6))]
+
+                if idx % 4 == 0 and dias_exp_1 < 5:
+                    dias_exp_2 = min(5, dias_exp_1 + rng.randint(1, 2))
+                    especificacoes_lotes.append((dias_exp_2, max(5.0, round(vendas_dia * 1.6, 1)), 1))
+
+                # Completa até 5 lotes com datas futuras (> 5 dias) para manter a simulação rápida
+                faltam = 5 - len(especificacoes_lotes)
+                dias_futuros = sorted(rng.sample(range(7, 61), faltam))
+                for d_fut in dias_futuros:
+                    qtd_fut = max(5.0, round(vendas_dia * rng.uniform(1.5, 4.0), 1))
+                    especificacoes_lotes.append((d_fut, qtd_fut, rng.randint(0, 3)))
             else:
-                spec = artigos_reais[idx - 5]
-                cat_nome = spec["categoria"]
-                nome = spec["nome"]
-                unidade_prod = spec["unidade_medida"]
-                conteudo_liq = spec["conteudo_liquido"]
-                un_ref = spec["unidade_referencia"]
-                pvp = spec["pvp"]
-                vendas_dia = round(rng.uniform(2.0, 12.0), 1)
-                cfg = spec
+                # 5 lotes com datas distintas escalonadas entre 6 e 60 dias
+                dias_lotes = sorted(rng.sample(range(6, 61), 5))
+                especificacoes_lotes = [
+                    (d_exp, max(5.0, round(vendas_dia * rng.uniform(1.5, 4.0), 1)), rng.randint(0, 8))
+                    for d_exp in dias_lotes
+                ]
 
             custo = round(pvp * rng.uniform(0.55, 0.68), 2)
 
@@ -449,7 +441,7 @@ class GestorBaseDadosTemporal:
             lotes = [dict(row) for row in conn.execute("SELECT * FROM inventario_lotes ORDER BY lote_id")]
         return catalogo, lotes
 
-    def registar_telemetria_influxdb(self, data_ref: date, lotes: list[dict], cenario: str) -> tuple[bool, str]:
+    def registar_telemetria_sqlite(self, data_ref: date, lotes: list[dict], cenario: str) -> tuple[bool, str]:
         """
         Mantém compatibilidade com o método chamado no app.py, registando o histórico
         diretamente na tabela `telemetria_execucoes` da base de dados SQLite local.

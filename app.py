@@ -539,7 +539,7 @@ def executar_orquestracao(cenario_perturbacao: str) -> None:
         })
 
     sacos_surpresa = construir_sacos_surpresa_equilibrados(lotes_copia, catalogo_map, tamanho_alvo_saco=4)
-    influx_ok, influx_msg = gestor.registar_telemetria_influxdb(data_ref, lotes_copia, cenario_perturbacao)
+    db_ok, db_msg = gestor.registar_telemetria_sqlite(data_ref, lotes_copia, cenario_perturbacao)
 
     st.session_state.resultados_simulacao = resultados_lote
     st.session_state.logs_estruturados = logs_cards
@@ -548,7 +548,7 @@ def executar_orquestracao(cenario_perturbacao: str) -> None:
     st.session_state.sacos_surpresa_lista = sacos_surpresa
     st.session_state.cenario_ativo = cenario_perturbacao
     st.session_state.data_referencia_ativa = data_ref
-    st.session_state.influx_status = (influx_ok, influx_msg)
+    st.session_state.db_status = (db_ok, db_msg)
 
 
 # ==============================================================================
@@ -564,22 +564,22 @@ precisa_recalcular = (
 )
 
 if precisa_recalcular:
-    with st.spinner("A sincronizar base de dados em tempo real (1.000 produtos) e a executar agentes..."):
+    with st.spinner("A sincronizar base de dados em tempo real (1.000 lotes produtos) e a executar agentes..."):
         executar_orquestracao(perturbacao)
 
 data_ativa = st.session_state.data_referencia_ativa
-influx_ok, influx_msg = st.session_state.influx_status
+db_ok, db_msg = st.session_state.db_status
 
 st.info(
     f"📅 **Data Operacional (Tempo Real):** `{data_ativa.strftime('%d/%m/%Y')}` "
-    f"&nbsp;|&nbsp; 🗄️ **Base de Dados / InfluxDB:** {influx_msg}"
+    f"&nbsp;|&nbsp; 🗄️ **Base de Dados (SQLite):** {db_msg}"
 )
 
 # ==============================================================================
 # LAYOUT PRINCIPAL EM ABAS
 # ==============================================================================
 tab1, tab2, tab3 = st.tabs([
-    "📊 Dashboard de Operações (1.000 Artigos)",
+    "📊 Dashboard de Operações (200 Artigos)",
     "🏷️ Etiquetas Eletrónicas (ESL)",
     "🧠 Raciocínio dos Agentes"
 ])

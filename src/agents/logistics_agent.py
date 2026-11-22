@@ -41,7 +41,7 @@ def agente_logistica_doacao(state: dict) -> dict:
     # Em operação normal, mantém na prateleira ESL para escoamento dinâmico;
     # só desvia para cozinha/doação quando o excesso ultrapassa 3.2x a procura restante.
     if excesso > 0 and cobertura > (dias * 3.2):
-        if categoria in ["pescado", "frescos"] and dias <= 1:
+        if categoria in ["pescado", "carne"] and dias <= 1:
             return {
                 "destino_proposto": "cozinha_interna",
                 "razao_logistica": f"Excesso extremo ({quantidade} {unidade} para {dias}d); desviado para cozinha interna.",

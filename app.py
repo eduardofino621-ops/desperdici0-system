@@ -245,10 +245,12 @@ perturbacao = st.sidebar.selectbox(
     "Injetar Perturbação no Sistema:",
     [
         "Nenhuma (Operação Normal)",
+        "A menos de 2 horas de fechar a loja.",
         "Quebra Repentina de Clientes (-50% Procura)",
         "Feriado / Loja Fechada Amanhã (Urgência Máxima)",
-        "Pico de Stock Excedente nas Frutas/Frescos"
+        "Pico de Stock Excedente nas Frutas/Frescos",
     ],
+
     key="select_perturbacao"
 )
 
@@ -259,6 +261,11 @@ simular_btn = st.sidebar.button("▶️ Reexecutar Orquestração / Sincronizar 
 # ==============================================================================
 def formatar_eur(valor: float) -> str:
     return f"{valor:.2f}".replace(".", ",") + "€"
+
+def formatar_stock(qtd: float, unidade: str) -> str:
+    if unidade == "kg":
+        return f"{qtd:.1f} {unidade}"
+    return f"{int(round(qtd))} {unidade}"
 
 def formatar_data_pt(data_iso: str) -> str:
     try:
@@ -271,8 +278,9 @@ def formatar_destino_legivel(destino: str) -> str:
         "prateleira_desconto": "Prateleira (Etiqueta ESL)",
         "sacos_surpresa": "Sacos Surpresa (Fim de Dia)",
         "cozinha_interna": "Cozinha Interna (Retirado)",
-        "doacao_externa": "Doação Externa (Retirado)",
         "descarte_obrigatorio": "Descarte Obrigatório",
+        "doacao_externa": "Doação Externa (Instituições de Caridade)",
+        "racao_animal": "Doação Externa (Parceria com Produção de Ração Animal)",
     }
     return mapa.get(destino, destino.replace("_", " ").title())
 
@@ -290,6 +298,7 @@ def construir_sacos_surpresa_equilibrados(
     lotes: list[dict],
     catalogo_map: dict[str, dict],
     tamanho_alvo_saco: int = 4,
+    max_sacos: int = 10,
 ) -> list[dict]:
     """
     1. Recolhe todos os lotes encaminhados para 'sacos_surpresa' (ex.: padaria/pastelaria).
@@ -316,7 +325,9 @@ def construir_sacos_surpresa_equilibrados(
     # Ordena por PVP para que a distribuição serpentina gere lotes de sacos com preços homogéneos
     pool_unidades.sort(key=lambda item: (item[1].get("pvp", 0.0), item[0].get("dias_para_expirar", 99)))
 
-    num_sacos = max(1, round(len(pool_unidades) / tamanho_alvo_saco))
+    num_sacos = min(max_sacos, max(1, round(len(pool_unidades) / tamanho_alvo_saco)))
+    # Limita a pool ao necessário para os sacos permitidos (anti-canibalismo)
+    pool_unidades = pool_unidades[: num_sacos * tamanho_alvo_saco]
     baldes: list[list[tuple[dict, dict]]] = [[] for _ in range(num_sacos)]
 
     for idx_u, unidade_item in enumerate(pool_unidades):
@@ -402,6 +413,7 @@ def consolidar_sacos_para_esl(sacos_ativos: list[dict]) -> list[dict]:
     return list(agrupados.values())
 
 def executar_orquestracao(cenario_perturbacao: str) -> None:
+    fecho_loja_2h = (cenario_perturbacao == "A menos de 2 horas de fechar a loja.")
     gestor = GestorBaseDadosTemporal(total_produtos=1000, seed=2026)
     data_ref = date.today()
     catalogo_copia, lotes_copia = gestor.gerar_dataset_temporal(data_ref=data_ref)
@@ -419,10 +431,19 @@ def executar_orquestracao(cenario_perturbacao: str) -> None:
         for lote in lotes_copia:
             prod = catalogo_map.get(lote["produto_id"], {})
             if prod.get("categoria") in ["carne", "fruta"]:
-                lote["quantidade_disponivel"] = round(lote["quantidade_disponivel"] * 2.5, 1)
+                nova_qtd = lote["quantidade_disponivel"] * 2.5
+                lote["quantidade_disponivel"] = round(nova_qtd, 1) if prod.get("unidade_medida") == "kg" else int(round(nova_qtd))
 
     resultados_lote = []
     logs_cards = []
+
+    stock_total_padaria_urgente = sum(
+        l["quantidade_disponivel"]
+        for l in lotes_copia
+        if l["dias_para_expirar"] <= 1
+        and l["quantidade_disponivel"] > 0
+        and catalogo_map.get(l["produto_id"], {}).get("categoria") == "padaria"
+    )
 
     for lote in lotes_copia:
         prod = catalogo_map.get(lote["produto_id"], {})
@@ -445,8 +466,9 @@ def executar_orquestracao(cenario_perturbacao: str) -> None:
                 "Cód. Artigo": prod["produto_id"],
                 "Produto": prod["nome"],
                 "Categoria": prod["categoria"].capitalize(),
-                "Stock": f"{lote['quantidade_disponivel']:.1f} {unidade}",
-                "Validade": f"{formatar_data_pt(lote['data_validade'])} ({dias}d)",
+                "Stock": formatar_stock(lote['quantidade_disponivel'], unidade),
+                "Validade": date.fromisoformat(lote["data_validade"]),
+                "Dias": int(dias),
                 "PVP": formatar_eur(pvp),
                 "Campanha": f"-{int(desc_campanha * 100)}%" if desc_campanha > 0 else "—",
                 "Período Campanha": periodo_campanha if desc_campanha > 0 else "—",
@@ -461,6 +483,7 @@ def executar_orquestracao(cenario_perturbacao: str) -> None:
             "lote_atual": lote,
             "produto_catalogo": prod,
             "catalogo_produtos": catalogo_copia,
+            "fecho_loja_2h": fecho_loja_2h
         }
 
         res_inv = agente_controlo_inventario(estado_grafo)
@@ -477,6 +500,8 @@ def executar_orquestracao(cenario_perturbacao: str) -> None:
             desconto_proposto=res_pri["desconto_proposto"],
             destino=res_log["destino_proposto"],
             produto_catalogo=prod,
+            stock_total_sacos=stock_total_padaria_urgente,
+            fecho_loja_2h=fecho_loja_2h
         )
 
         desc_final = val_csp["desconto_ajustado"]
@@ -496,7 +521,7 @@ def executar_orquestracao(cenario_perturbacao: str) -> None:
             lote["estado"] = "promocao_critica"
 
         preco_exibido_tabela = (
-            "Retirado (Cozinha/Doação)"
+            "Retirado (Cozinha/Doação/Ração)"
             if destino_final in ["cozinha_interna", "doacao_externa"]
             else formatar_eur(preco_final)
         )
@@ -506,8 +531,9 @@ def executar_orquestracao(cenario_perturbacao: str) -> None:
             "Cód. Artigo": prod["produto_id"],
             "Produto": prod["nome"],
             "Categoria": prod["categoria"].capitalize(),
-            "Stock": f"{lote['quantidade_disponivel']:.1f} {unidade}",
-            "Validade": f"{formatar_data_pt(lote['data_validade'])} ({dias}d)",
+            "Stock": formatar_stock(lote['quantidade_disponivel'], unidade),
+            "Validade": date.fromisoformat(lote["data_validade"]),
+            "Dias": int(dias),
             "PVP": formatar_eur(pvp),
             "Campanha": f"-{int(desc_campanha * 100)}%" if desc_campanha > 0 else "—",
             "Período Campanha": periodo_campanha if desc_campanha > 0 else "—",
@@ -523,7 +549,7 @@ def executar_orquestracao(cenario_perturbacao: str) -> None:
             "nome": prod["nome"],
             "categoria": prod["categoria"].capitalize(),
             "dias": dias,
-            "quantidade": f"{lote['quantidade_disponivel']:.1f} {unidade}",
+            "quantidade": formatar_stock(lote['quantidade_disponivel'], unidade),
             "excesso": f"{res_inv.get('excesso_estimado', 0.0):.1f} {unidade}",
             "risco_critico": res_inv.get("risco_critico", False),
             "parecer_inventario": res_inv["parecer_inventario"],
@@ -538,7 +564,7 @@ def executar_orquestracao(cenario_perturbacao: str) -> None:
             "destino_final": formatar_destino_legivel(destino_final),
         })
 
-    sacos_surpresa = construir_sacos_surpresa_equilibrados(lotes_copia, catalogo_map, tamanho_alvo_saco=4)
+    sacos_surpresa = construir_sacos_surpresa_equilibrados(lotes_copia, catalogo_map, tamanho_alvo_saco=4, max_sacos=10)
     db_ok, db_msg = gestor.registar_telemetria_sqlite(data_ref, lotes_copia, cenario_perturbacao)
 
     st.session_state.resultados_simulacao = resultados_lote
@@ -649,13 +675,22 @@ with tab1:
         df_res = df_res[mask]
 
     if filtro_validade_tab == "1 a 5 dias":
-        df_res = df_res[df_res["Validade"].str.contains(r"\([1-5]d\)", regex=True)]
+        df_res = df_res[df_res["Dias"] <= 5]
     elif filtro_validade_tab == "Sacos Surpresa":
         df_res = df_res[df_res["Destino Operacional"].str.contains("Sacos Surpresa", na=False)]
     elif filtro_validade_tab == "Superior a 5 dias":
-        df_res = df_res[~df_res["Validade"].str.contains(r"\([1-5]d\)", regex=True)]
+        df_res = df_res[df_res["Dias"] > 5]
 
-    st.dataframe(df_res, use_container_width=True, hide_index=True, height=440)
+    st.dataframe(
+        df_res,
+        use_container_width=True,
+        hide_index=True,
+        height=440,
+        column_config={
+            "Validade": st.column_config.DateColumn("Validade", format="DD/MM/YYYY"),
+            "Dias": st.column_config.NumberColumn("Dias", format="%dd"),
+        },
+    )
 
 # ------------------------------------------------------------------------------
 # ABA 2: ETIQUETAS ELETRÓNICAS (ESL) UNIFICADAS (PRODUTOS + SACOS SURPRESA)
@@ -703,7 +738,7 @@ with tab2:
             st.rerun()
     with b_top2:
         if st.button(
-            f"⚠️ Em Risco / Alterados pelos Agentes ({total_em_risco})",
+            f"⚠️ Alterados pelos Agentes ({len(prods_alterados_agentes)} art. + {len(grupos_sacos_esl)} sacos surpresa)",
             key="btn_esl_risco",
             type="primary" if st.session_state.filtro_esl_ativo == "risco" else "secondary",
             use_container_width=True,
@@ -727,8 +762,8 @@ with tab2:
         ("charcutaria", "🥓 Charcutaria"),
         ("fruta", "🍎 Fruta"),
         ("laticinios", "🥛 Laticínios"),
-        ("pescado", "🐟 Pescado"),
         ("padaria", "🥖 Padaria"),
+        ("pescado", "🐟 Pescado"),
         ("mercearia", "🛒 Mercearia")
         
     ]
@@ -896,7 +931,7 @@ with tab2:
                                 for row in st.session_state.resultados_simulacao:
                                     if row["Lote"] == l_id:
                                         un_row = row["Stock"].split(" ")[-1]
-                                        row["Stock"] = f"{lote_ref['quantidade_disponivel']:.1f} {un_row}"
+                                        row["Stock"] = formatar_stock(lote_ref['quantidade_disponivel'], un_row)
                                         if lote_ref["quantidade_disponivel"] <= 0:
                                             row["Destino Operacional"] = "Vendido em Saco Surpresa"
                         st.rerun()
@@ -1058,7 +1093,7 @@ with tab2:
                         lote_prioritario["estado"] = "esgotado"
                         for row in st.session_state.resultados_simulacao:
                             if row["Lote"] == lote_prioritario["lote_id"]:
-                                row["Stock"] = f"0.0 {unidade}"
+                                row["Stock"] = formatar_stock(0.0, unidade)
                                 row["Destino Operacional"] = "Vendido na Caixa (Esgotado)"
                         st.rerun()
 

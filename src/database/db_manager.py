@@ -159,6 +159,14 @@ def _calcular_periodo_semana(data_ref: date) -> str:
     domingo = segunda + timedelta(days=6)
     return f"{segunda.strftime('%d/%m/%Y')} a {domingo.strftime('%d/%m/%Y')}"
 
+def _max_dias_validade_padaria(nome_produto: str) -> int:
+    nome_l = nome_produto.lower()
+    if "broa" in nome_l or "massa mãe" in nome_l or "chapata" in nome_l:
+        return 4
+    if any(k in nome_l for k in ["papo-seco", "carcaça", "bijou", "baguete", "croissant", "chouriço", "avulso"]):
+        return 2
+    return 3
+
 
 class GestorBaseDadosTemporal:
     """
@@ -380,7 +388,16 @@ class GestorBaseDadosTemporal:
             tem_validade_curta = idx in indices_validade_curta
 
             # 2.º BLOCO: Geração de exatamente 5 lotes por produto (200 x 5 = 1.000 lotes)
-            if idx == 1:
+            tem_validade_curta = idx in indices_validade_curta
+
+            if cat_nome == "padaria":
+                max_d = _max_dias_validade_padaria(nome)
+                dias_pao = sorted([rng.randint(1, max_d) for _ in range(5)])
+                especificacoes_lotes = [
+                    (d_exp, max(3, int(round(vendas_dia * rng.uniform(0.5, 1.4)))), rng.randint(0, 1))
+                    for d_exp in dias_pao
+                ]
+            elif idx == 1:
                 especificacoes_lotes = [
                     (1, 7.0, 4),
                     (2, 11.0, 3),
@@ -410,6 +427,8 @@ class GestorBaseDadosTemporal:
                 ]
 
             for dias_exp, qtd, dias_desde_entrada in especificacoes_lotes:
+                if unidade_prod != "kg":
+                    qtd = int(round(qtd))
                 contador_lote += 1
                 lote_id = f"LOTE{contador_lote:04d}"
                 data_val = data_ref + timedelta(days=dias_exp)

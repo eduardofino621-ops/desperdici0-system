@@ -16,6 +16,7 @@ class DecisaoLogistica(BaseModel):
 def agente_logistica_doacao(state: dict) -> dict:
     lote = state.get("lote_atual", {})
     produto = state.get("produto_catalogo", {})
+    fecho_loja_2h = state.get("fecho_loja_2h", False)
 
     nome = produto.get("nome", "Produto")
     categoria = produto.get("categoria", "geral")
@@ -27,15 +28,30 @@ def agente_logistica_doacao(state: dict) -> dict:
     parecer_inv = state.get("parecer_inventario", "")
 
     if dias <= 0:
+        if categoria == "padaria":
+            return {
+                "destino_proposto": "racao_animal",
+                "razao_logistica": "Pão em fim de vida útil encaminhado para instituição de transformação em farinha para ração animal.",
+            }
         return {
             "destino_proposto": "descarte_obrigatorio",
             "razao_logistica": "Lote expirado; retirada imediata obrigatória.",
         }
 
-    if categoria == "padaria" and dias <= 1 and quantidade >= 5.0:
+    if categoria == "padaria":
+        if dias == 1 and fecho_loja_2h and quantidade > 0:
+            return {
+                "destino_proposto": "sacos_surpresa",
+                "razao_logistica": f"A <= 2h do fecho: {quantidade} {unidade} de padaria (1d) alocados à pool de sacos surpresa.",
+            }
+        if excesso > 0 and cobertura > (dias * 3.2):
+            return {
+                "destino_proposto": "racao_animal",
+                "razao_logistica": f"Excesso extremo de padaria ({quantidade} {unidade}); encaminhado para farinha de ração animal (cozinha proibida).",
+            }
         return {
-            "destino_proposto": "sacos_surpresa",
-            "razao_logistica": f"Padaria avulsa com {quantidade} {unidade} a expirar em 24h alocada a sacos surpresa de fim de dia.",
+            "destino_proposto": "prateleira_desconto",
+            "razao_logistica": "Padaria mantida em prateleira a preço normal fora da janela de 2h antes do fecho (anti-canibalismo).",
         }
 
     # Em operação normal, mantém na prateleira ESL para escoamento dinâmico;

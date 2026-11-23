@@ -9,7 +9,9 @@ def validar_regras_csp(
     lote: dict,
     desconto_proposto: float,
     destino: str,
-    produto_catalogo: dict | None = None
+    produto_catalogo: dict,
+    stock_total_sacos: float | None = None,
+    fecho_loja_2h: bool = False,
 ) -> dict:
     """
     Valida e corrige restrições CSP cruzando INVENTARIO_LOTES com CATALOGO_PRODUTOS.
@@ -58,22 +60,45 @@ def validar_regras_csp(
         )
         destino_ajustado = "prateleira_desconto"
 
-    # Regra 3: Padaria avulsa vai para sacos surpresa
-    if categoria == "padaria" and desconto_ajustado > 0 and destino_ajustado == "prateleira_desconto":
+    # Regra 3A: Pão NUNCA pode ir para cozinha interna (higiene e segurança alimentar)
+    if categoria == "padaria" and destino_ajustado == "cozinha_interna":
         erros.append(
-            "Restrição CSP Comercial: Artigos de padaria avulsa não sofrem descontos lineares na prateleira; alocados a sacos surpresa."
+            "Bloqueio CSP Higiene: Pão exposto ao público não pode entrar na cozinha interna; redirecionado para farinha de ração animal."
         )
-        destino_ajustado = "sacos_surpresa"
+        destino_ajustado = "racao_animal"
 
-    # Regra 4: Quantidade mínima para sacos surpresa
-    if destino_ajustado == "sacos_surpresa" and quantidade < 5.0:
+    # Regra 3B: Apenas padaria pode ser doada para transformação em farinha para ração animal
+    if categoria != "padaria" and destino_ajustado == "racao_animal":
         erros.append(
-            f"Restrição CSP Logística: Quantidade insuficiente ({quantidade} {unidade} < 5.0 {unidade}) para criar sacos surpresa; redirecionado para prateleira."
+            "Restrição CSP Logística: Apenas excedentes de padaria podem ser encaminhados para farinha de ração animal."
+        )
+        destino_ajustado = "prateleira_desconto"
+
+    # Regra 3C: Descontos/Sacos Surpresa em pão de 1 dia só aplicam a <= 2h do fecho de loja
+    if categoria == "padaria":
+        if dias == 1 and fecho_loja_2h:
+            if desconto_ajustado > 0 and destino_ajustado == "prateleira_desconto":
+                erros.append(
+                    "Restrição CSP Comercial: A <= 2h do fecho, pão com 1 dia de validade é alocado a sacos surpresa."
+                )
+                destino_ajustado = "sacos_surpresa"
+        elif destino_ajustado in ["prateleira_desconto", "sacos_surpresa"] and desconto_ajustado > desconto_campanha:
+            erros.append(
+                "Restrição CSP Anti-Canibalismo: Descontos de validade/sacos surpresa em padaria só ativam no próprio dia a <= 2h do fecho."
+            )
+            destino_ajustado = "prateleira_desconto"
+            desconto_ajustado = desconto_campanha
+
+    # Regra 4: Quantidade mínima agregada para sacos surpresa (quaisquer 3 unidades de padaria no total)
+    qtd_sacos = stock_total_sacos if stock_total_sacos is not None else quantidade
+    if destino_ajustado == "sacos_surpresa" and qtd_sacos < 3.0:
+        erros.append(
+            f"Restrição CSP Logística: Stock agregado insuficiente ({qtd_sacos:.1f} un < 3.0 un) para criar sacos surpresa; redirecionado para prateleira."
         )
         destino_ajustado = "prateleira_desconto"
 
     # Coerência de destino sem ESL
-    if destino_ajustado in ["doacao_externa", "cozinha_interna"] and desconto_ajustado > 0:
+    if destino_ajustado in ["doacao_externa", "cozinha_interna", "racao_animal"] and desconto_ajustado > 0:
         erros.append(
             f"Restrição CSP de Coerência: Destino '{destino_ajustado}' não aplica etiqueta ESL ao público; desconto ajustado para 0%."
         )

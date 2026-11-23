@@ -791,8 +791,9 @@ with tab1:
                 "background-color": "#1a1a1a !important",
             },
             ".ag-row-hover": {
-                "background-color": "#262626 !important",
-            },
+            # "background-color": "#262626 !important",
+            "background-color": "rgba(255, 75, 75, 0.16) !important",
+             },
             ".ag-row-selected": {
                 "background-color": "#2d2d2d !important",
             },
@@ -809,8 +810,14 @@ with tab1:
             },
         }
 
+        if "aggrid_key_v" not in st.session_state:
+            st.session_state["aggrid_key_v"] = 0
+        if "popup_lote_pendente" not in st.session_state:
+            st.session_state["popup_lote_pendente"] = None
+
         grid_resp = AgGrid(
             df_grid,
+            key=f"tabela_operacoes_{st.session_state['aggrid_key_v']}",
             gridOptions=gb.build(),
             update_mode=GridUpdateMode.SELECTION_CHANGED,
             columns_auto_size_mode=ColumnsAutoSizeMode.NO_AUTOSIZE,
@@ -829,7 +836,14 @@ with tab1:
             lote_clicado = sel[0]["Lote"]
 
         if lote_clicado:
-            mostrar_popup_agentes(lote_clicado)
+            st.session_state["popup_lote_pendente"] = lote_clicado
+            st.session_state["aggrid_key_v"] += 1
+            st.rerun()
+
+        if st.session_state["popup_lote_pendente"]:
+            lote_abrir = st.session_state["popup_lote_pendente"]
+            st.session_state["popup_lote_pendente"] = None
+            mostrar_popup_agentes(lote_abrir)
 
 # ------------------------------------------------------------------------------
 # ABA 2: ETIQUETAS ELETRÓNICAS (ESL) UNIFICADAS (PRODUTOS + SACOS SURPRESA)

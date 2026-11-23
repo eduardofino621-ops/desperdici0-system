@@ -297,100 +297,68 @@ def obter_lotes_ativos_fefo(produto_id: str, lotes_por_prod: dict[str, list[dict
 def construir_sacos_surpresa_equilibrados(
     lotes: list[dict],
     catalogo_map: dict[str, dict],
-    tamanho_alvo_saco: int = 4,
+    peso_alvo_kg: float = 0.50,
     max_sacos: int = 10,
 ) -> list[dict]:
-    """
-    1. Recolhe todos os lotes encaminhados para 'sacos_surpresa' (ex.: padaria/pastelaria).
-    2. Distribui as unidades disponíveis em round-robin serpentina por sacos de tamanho
-       semelhante (~4 artigos), equilibrando o valor base entre sacos.
-    3. Soma os preços base (PVP) de cada saco e aplica o desconto de validade validado pelo CSP.
-    """
-    lotes_sacos = [
-        l for l in lotes
-        if l.get("destino_final") == "sacos_surpresa"
-        and l.get("quantidade_disponivel", 0.0) > 0
-        and l.get("estado") not in ["esgotado", "expirado"]
-    ]
-    if not lotes_sacos:
+    pool_unidades = []
+    for lote in lotes:
+        if lote.get("destino_final") != "sacos_surpresa":
+            continue
+        qtd = int(round(lote.get("quantidade_disponivel", 0)))
+        if qtd <= 0:
+            continue
+        prod = catalogo_map.get(lote["produto_id"], {})
+        pvp = prod.get("pvp", 0.0)
+        peso_kg = float(prod.get("conteudo_liquido", 0.10))
+        desc = max(lote.get("desconto_validade", 0.0), prod.get("desconto_campanha", 0.0))
+        preco_un = round(pvp * (1 - desc), 2)
+        for _ in range(qtd):
+            pool_unidades.append({
+                "lote_id": lote["lote_id"],
+                "nome": prod.get("nome", "Pão"),
+                "pvp": pvp,
+                "preco_final": preco_un,
+                "peso_kg": peso_kg,
+            })
+
+    if sum(u["peso_kg"] for u in pool_unidades) < peso_alvo_kg:
         return []
 
-    pool_unidades: list[tuple[dict, dict]] = []
-    for lote in lotes_sacos:
-        prod = catalogo_map.get(lote["produto_id"], {})
-        qtd_unidades = max(1, int(round(lote["quantidade_disponivel"])))
-        for _ in range(qtd_unidades):
-            pool_unidades.append((lote, prod))
+    # Baralha com seed fixa para misturar pães grandes e pequenos em cada saco
+    rng = random.Random(2026)
+    rng.shuffle(pool_unidades)
 
-    # Ordena por PVP para que a distribuição serpentina gere lotes de sacos com preços homogéneos
-    pool_unidades.sort(key=lambda item: (item[1].get("pvp", 0.0), item[0].get("dias_para_expirar", 99)))
+    sacos = []
+    saco_atual = []
+    peso_atual = 0.0
 
-    num_sacos = min(max_sacos, max(1, round(len(pool_unidades) / tamanho_alvo_saco)))
-    # Limita a pool ao necessário para os sacos permitidos (anti-canibalismo)
-    pool_unidades = pool_unidades[: num_sacos * tamanho_alvo_saco]
-    baldes: list[list[tuple[dict, dict]]] = [[] for _ in range(num_sacos)]
+    for item in pool_unidades:
+        if len(sacos) >= max_sacos:
+            break
+        saco_atual.append(item)
+        peso_atual += item["peso_kg"]
 
-    for idx_u, unidade_item in enumerate(pool_unidades):
-        ciclo = idx_u // num_sacos
-        pos = idx_u % num_sacos
-        indice_balde = pos if ciclo % 2 == 0 else (num_sacos - 1 - pos)
-        baldes[indice_balde].append(unidade_item)
+        if peso_atual >= peso_alvo_kg:
+            pvp_total = round(sum(x["pvp"] for x in saco_atual), 2)
+            preco_total = round(sum(x["preco_final"] for x in saco_atual), 2)
+            desc_pct = int(round((1 - preco_total / max(0.01, pvp_total)) * 100))
+            lotes_consumo: dict[str, float] = {}
+            for x in saco_atual:
+                lotes_consumo[x["lote_id"]] = lotes_consumo.get(x["lote_id"], 0.0) + 1.0
 
-    sacos_gerados = []
-    for idx_s, itens_saco in enumerate(baldes, start=1):
-        if not itens_saco:
-            continue
+            sacos.append({
+                "titulo": "Saco Surpresa Padaria",
+                "preco_base": pvp_total,
+                "preco_final": preco_total,
+                "desconto_pct": desc_pct,
+                "peso_kg": round(peso_atual, 2),
+                "lotes_consumo": lotes_consumo,
+                "vendido": False,
+            })
+            saco_atual = []
+            peso_atual = 0.0
 
-        preco_base_saco = round(sum(prod.get("pvp", 0.0) for _, prod in itens_saco), 2)
-
-        custo_minimo_saco = sum(
-            prod.get("custo_aquisicao", 0.0) * (1.0 + prod.get("margem_minima_pct", 0.05))
-            for _, prod in itens_saco
-        )
-
-        descontos_validade = [
-            lote.get("desconto_csp_aprovado")
-            or lote.get("desconto_validade")
-            or prod.get("desconto_campanha")
-            or 0.50
-            for lote, prod in itens_saco
-        ]
-        desc_medio = sum(descontos_validade) / len(descontos_validade)
-        desconto_pct = max(10, min(80, int(round(desc_medio * 100))))
-
-        preco_final_saco = round(preco_base_saco * (1.0 - desconto_pct / 100.0), 2)
-        if preco_final_saco < custo_minimo_saco:
-            preco_final_saco = round(custo_minimo_saco, 2)
-            desconto_pct = max(5, int(round((1.0 - (preco_final_saco / max(0.01, preco_base_saco))) * 100)))
-            preco_final_saco = round(preco_base_saco * (1.0 - desconto_pct / 100.0), 2)
-
-        lotes_consumo: dict[str, float] = {}
-        categorias_saco = set()
-        for lote, prod in itens_saco:
-            l_id = lote.get("lote_id", "")
-            categorias_saco.add(prod.get("categoria", "padaria"))
-            lotes_consumo[l_id] = lotes_consumo.get(l_id, 0.0) + 1.0
-
-        # Nomes iguais permitidos apenas nos Sacos Surpresa (sem sufixo #01 ou ID)
-        if categorias_saco == {"padaria"}:
-            titulo_saco = "Saco Surpresa Padaria"
-        elif len(categorias_saco) == 1:
-            cat_unica = next(iter(categorias_saco)).capitalize()
-            titulo_saco = f"Saco Surpresa {cat_unica}"
-        else:
-            titulo_saco = "Saco Surpresa Misto"
-
-        sacos_gerados.append({
-            "chave_interna": f"saco_int_{idx_s}",
-            "titulo": titulo_saco,
-            "preco_base": preco_base_saco,
-            "desconto_pct": desconto_pct,
-            "preco_final": preco_final_saco,
-            "lotes_consumo": lotes_consumo,
-            "vendido": False,
-        })
-
-    return sacos_gerados
+    return sacos
 
 def consolidar_sacos_para_esl(sacos_ativos: list[dict]) -> list[dict]:
     """
@@ -438,12 +406,12 @@ def executar_orquestracao(cenario_perturbacao: str) -> None:
     logs_cards = []
 
     stock_total_padaria_urgente = sum(
-        l["quantidade_disponivel"]
-        for l in lotes_copia
-        if l["dias_para_expirar"] <= 1
-        and l["quantidade_disponivel"] > 0
-        and catalogo_map.get(l["produto_id"], {}).get("categoria") == "padaria"
-    )
+    l["quantidade_disponivel"] * catalogo_map.get(l["produto_id"], {}).get("conteudo_liquido", 0.10)
+    for l in lotes_copia
+    if l["dias_para_expirar"] <= 1
+    and l["quantidade_disponivel"] > 0
+    and catalogo_map.get(l["produto_id"], {}).get("categoria") == "padaria"
+)
 
     for lote in lotes_copia:
         prod = catalogo_map.get(lote["produto_id"], {})
@@ -564,7 +532,7 @@ def executar_orquestracao(cenario_perturbacao: str) -> None:
             "destino_final": formatar_destino_legivel(destino_final),
         })
 
-    sacos_surpresa = construir_sacos_surpresa_equilibrados(lotes_copia, catalogo_map, tamanho_alvo_saco=4, max_sacos=10)
+    sacos_surpresa = construir_sacos_surpresa_equilibrados(lotes_copia, catalogo_map, peso_alvo_kg=0.50, max_sacos=10)
     db_ok, db_msg = gestor.registar_telemetria_sqlite(data_ref, lotes_copia, cenario_perturbacao)
 
     st.session_state.resultados_simulacao = resultados_lote

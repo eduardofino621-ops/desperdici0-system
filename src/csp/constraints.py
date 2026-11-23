@@ -89,11 +89,11 @@ def validar_regras_csp(
             destino_ajustado = "prateleira_desconto"
             desconto_ajustado = desconto_campanha
 
-    # Regra 4: Quantidade mínima agregada para sacos surpresa (quaisquer 3 unidades de padaria no total)
-    qtd_sacos = stock_total_sacos if stock_total_sacos is not None else quantidade
-    if destino_ajustado == "sacos_surpresa" and qtd_sacos < 3.0:
+    # Regra 4: Peso mínimo agregado para sacos surpresa (mínimo 500g / 0.50 kg de padaria no total)
+    peso_sacos = stock_total_sacos if stock_total_sacos is not None else (quantidade * produto.get("conteudo_liquido", 0.10))
+    if destino_ajustado == "sacos_surpresa" and peso_sacos < 0.50:
         erros.append(
-            f"Restrição CSP Logística: Stock agregado insuficiente ({qtd_sacos:.1f} un < 3.0 un) para criar sacos surpresa; redirecionado para prateleira."
+            f"Restrição CSP Logística: Peso agregado insuficiente ({peso_sacos:.2f} kg < 0.50 kg) para criar sacos surpresa; redirecionado para prateleira."
         )
         destino_ajustado = "prateleira_desconto"
 

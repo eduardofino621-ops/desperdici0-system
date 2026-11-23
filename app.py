@@ -1,3 +1,5 @@
+import random
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode, ColumnsAutoSizeMode
 from datetime import date, datetime
 from urllib.parse import quote
 import streamlit as st
@@ -259,8 +261,46 @@ simular_btn = st.sidebar.button("▶️ Reexecutar Orquestração / Sincronizar 
 # ==============================================================================
 # FUNÇÕES AUXILIARES
 # ==============================================================================
+@st.dialog("🧠 Cadeia de Decisão dos Agentes", width="large")
+def mostrar_popup_agentes(lote_id: str):
+    item = next(
+        (x for x in st.session_state.get("logs_estruturados", []) if x.get("lote_id") == lote_id),
+        None,
+    )
+    if not item:
+        st.info(
+            f"O lote **{lote_id}** tem validade superior a 5 dias, pelo que se mantém em operação normal "
+            "sem necessidade de intervenção dos agentes de IA."
+        )
+        return
+
+    badge_risco = "🔴 Risco Crítico" if item["risco_critico"] else "🟢 Controlado"
+    badge_csp = "✅ CSP Aprovado" if item["csp_valido"] else "🛡️ Ajustado pelo CSP"
+    st.markdown(f"### {item['produto_id']} ({item['lote_id']}) — {item['nome']}")
+    st.caption(f"Validade: {item['dias']}d | {badge_risco} | Resultado: {item['preco_final']} [{badge_csp}]")
+
+    st.markdown(f"**1️⃣ Agente de Controlo de Inventário** *(Stock: {item['quantidade']} | Excesso previsto: {item['excesso']})*")
+    st.info(item["parecer_inventario"])
+
+    st.markdown(f"**2️⃣ Agente de Logística e Destino Operacional** → Proposta: `{item['destino_proposto']}`")
+    st.write(item["razao_logistica"])
+
+    st.markdown(f"**3️⃣ Agente de Dynamic Pricing** → Desconto Proposto: `{item['desconto_proposto']}`")
+    st.write(item["raciocinio_pricing"])
+
+    st.markdown("**4️⃣ Auditoria do Módulo Regulador (CSP)**")
+    if item["csp_valido"]:
+        st.success(f"Conformidade legal e financeira validada. Preço final: **{item['preco_final']}** | Destino: **{item['destino_final']}**.")
+    else:
+        for erro in item["csp_erros"]:
+            st.warning(f"Intervenção CSP: {erro}")
+        st.markdown(f"**Resultado Corrigido:** Desconto **{item['desconto_final']}** ({item['preco_final']}) | Destino: **{item['destino_final']}**.")
+
 def formatar_eur(valor: float) -> str:
     return f"{valor:.2f}".replace(".", ",") + "€"
+
+def sublinhar_texto(texto: str) -> str:
+    return "".join(f"{c}\u0332" for c in texto)
 
 def formatar_stock(qtd: float, unidade: str) -> str:
     if unidade == "kg":
@@ -443,7 +483,7 @@ def executar_orquestracao(cenario_perturbacao: str) -> None:
                 "Desc. Validade": "—",
                 "Preço Ativo": formatar_eur(preco_final),
                 "Destino Operacional": "Prateleira (Etiqueta ESL)",
-                "Validação CSP": "✅ Aprovado",
+                "Consultar Validação CSP": f"✅ {sublinhar_texto('Aprovado')}",
             })
             continue
 
@@ -490,7 +530,7 @@ def executar_orquestracao(cenario_perturbacao: str) -> None:
 
         preco_exibido_tabela = (
             "Retirado (Cozinha/Doação/Ração)"
-            if destino_final in ["cozinha_interna", "doacao_externa"]
+            if destino_final in ["cozinha_interna", "doacao_externa", "racao_animal"]
             else formatar_eur(preco_final)
         )
 
@@ -508,7 +548,8 @@ def executar_orquestracao(cenario_perturbacao: str) -> None:
             "Desc. Validade": f"-{int(lote['desconto_validade'] * 100)}%" if lote["desconto_validade"] > 0 else "—",
             "Preço Ativo": preco_exibido_tabela,
             "Destino Operacional": formatar_destino_legivel(destino_final),
-            "Validação CSP": "✅ Aprovado" if val_csp["valido"] else "🛡️ Ajustado",
+            "Consultar Validação CSP": (
+            f"✅ {sublinhar_texto('Aprovado')}" if val_csp["valido"] else f"🛡️ {sublinhar_texto('Ajustado')}"),
         })
 
         logs_cards.append({
@@ -649,16 +690,146 @@ with tab1:
     elif filtro_validade_tab == "Superior a 5 dias":
         df_res = df_res[df_res["Dias"] > 5]
 
-    st.dataframe(
-        df_res,
-        use_container_width=True,
-        hide_index=True,
-        height=440,
-        column_config={
-            "Validade": st.column_config.DateColumn("Validade", format="DD/MM/YYYY"),
-            "Dias": st.column_config.NumberColumn("Dias", format="%dd"),
-        },
+    df_estilo = df_res.style.set_properties(
+        subset=["Consultar Validação CSP"],
+        **{"color": "#38bdf8"},
     )
+
+    if df_res.empty:
+        st.info("ℹ️ Nenhum lote encontrado para os filtros selecionados.")
+    else:
+        df_grid = df_res.copy()
+        df_grid["Validade"] = df_grid["Validade"].astype(str)
+
+        fmt_data_pt = JsCode("""
+            function(params) {
+                if (!params.value) return '';
+                var p = String(params.value).split('-');
+                return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : params.value;
+            }
+        """)
+        fmt_dias = JsCode("function(params) { return params.value != null ? params.value + 'd' : ''; }")
+        clicar_csp = JsCode("""
+            function(params) {
+                params.node.setSelected(true, true);
+            }
+        """)
+
+        gb = GridOptionsBuilder.from_dataframe(df_grid)
+        gb.configure_default_column(
+            sortable=True,
+            filter=False,
+            resizable=True,
+            suppressSizeToFit=True,
+            wrapHeaderText=True,
+            autoHeaderHeight=True,
+        )
+        gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=20)
+        gb.configure_selection(selection_mode="single", use_checkbox=False)
+        gb.configure_grid_options(
+            enableCellTextSelection=True,
+            ensureDomOrder=True,
+            suppressRowClickSelection=True,
+        )
+
+        # Largura dinâmica com base na maior string de cada coluna (+ pequena folga)
+        for col_nome in df_grid.columns:
+            if col_nome == "Consultar Validação CSP":
+                continue
+            max_chars = int(df_grid[col_nome].astype(str).str.len().max())
+            if col_nome == "Validade":
+                larg = 110
+            elif col_nome == "Dias":
+                larg = 70
+            else:
+                larg = int(max(85, min(360, max_chars * 8.2 + 26)))
+
+            if col_nome == "Validade":
+                gb.configure_column(col_nome, width=larg, minWidth=larg, valueFormatter=fmt_data_pt)
+            elif col_nome == "Dias":
+                gb.configure_column(col_nome, width=larg, minWidth=larg, valueFormatter=fmt_dias)
+            else:
+                gb.configure_column(col_nome, width=larg, minWidth=larg)
+
+        # Coluna fixa à direita, compacta (o título faz wrap em 2 linhas)
+        gb.configure_column(
+            "Consultar Validação CSP",
+            width=135,
+            minWidth=135,
+            pinned="right",
+            cellStyle={
+                "color": "#38bdf8",
+                "textDecoration": "underline",
+                "cursor": "pointer",
+                "fontWeight": "600",
+            },
+            onCellClicked=clicar_csp,
+        )
+
+        # Paleta neutra Preto & Cinza (listada)
+        custom_css = {
+            ".ag-root-wrapper": {
+                "background-color": "#111111 !important",
+                "border": "1px solid #2c2c2c !important",
+                "border-radius": "8px !important",
+            },
+            ".ag-header": {
+                "background-color": "#1c1c1c !important",
+                "border-bottom": "1px solid #333333 !important",
+            },
+            ".ag-header-cell-text": {
+                "color": "#e5e5e5 !important",
+                "font-weight": "600 !important",
+                "line-height": "1.2 !important",
+            },
+            ".ag-row": {
+                "background-color": "#111111 !important",
+                "color": "#f3f3f3 !important",
+                "border-bottom": "1px solid #242424 !important",
+            },
+            ".ag-row-odd": {
+                "background-color": "#1a1a1a !important",
+            },
+            ".ag-row-hover": {
+                "background-color": "#262626 !important",
+            },
+            ".ag-row-selected": {
+                "background-color": "#2d2d2d !important",
+            },
+            ".ag-cell": {
+                "color": "#f3f3f3 !important",
+            },
+            ".ag-paging-panel": {
+                "background-color": "#1c1c1c !important",
+                "color": "#d4d4d4 !important",
+                "border-top": "1px solid #333333 !important",
+            },
+            ".ag-icon": {
+                "color": "#d4d4d4 !important",
+            },
+        }
+
+        grid_resp = AgGrid(
+            df_grid,
+            gridOptions=gb.build(),
+            update_mode=GridUpdateMode.SELECTION_CHANGED,
+            columns_auto_size_mode=ColumnsAutoSizeMode.NO_AUTOSIZE,
+            allow_unsafe_jscode=True,
+            custom_css=custom_css,
+            theme="streamlit",
+            height=540,
+            fit_columns_on_grid_load=False,
+        )
+
+        sel = grid_resp.get("selected_rows")
+        lote_clicado = None
+        if isinstance(sel, pd.DataFrame) and not sel.empty:
+            lote_clicado = sel.iloc[0]["Lote"]
+        elif isinstance(sel, list) and len(sel) > 0:
+            lote_clicado = sel[0]["Lote"]
+
+        if lote_clicado:
+            mostrar_popup_agentes(lote_clicado)
 
 # ------------------------------------------------------------------------------
 # ABA 2: ETIQUETAS ELETRÓNICAS (ESL) UNIFICADAS (PRODUTOS + SACOS SURPRESA)

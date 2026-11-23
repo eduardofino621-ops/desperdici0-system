@@ -104,13 +104,21 @@ def validar_regras_csp(
         )
         desconto_ajustado = 0.0
 
-    # Regra 5: Respeito por campanha ativa
-    if destino_ajustado == "prateleira_desconto" and desconto_campanha > 0 and desconto_ajustado < desconto_campanha:
+    # Regra 5: Desconto de validade tem de ser SEMPRE superior à campanha ativa (+5% mínimo)
+    pode_ter_desc_validade = not (categoria == "padaria" and not (dias == 1 and fecho_loja_2h))
+    if (
+        destino_ajustado in ["prateleira_desconto", "sacos_surpresa"]
+        and pode_ter_desc_validade
+        and desconto_campanha > 0
+        and desconto_ajustado > 0
+        and desconto_ajustado <= desconto_campanha
+    ):
+        novo_desc = min(0.75, round(desconto_campanha + 0.05, 2))
         erros.append(
-            f"Restrição CSP Comercial: Desconto proposto ({int(desconto_ajustado * 100)}%) inferior à campanha ativa "
-            f"({int(desconto_campanha * 100)}%); ajustado ao mínimo de campanha."
+            f"Restrição CSP Comercial: Desconto de validade ({int(desconto_ajustado * 100)}%) tem de superar "
+            f"a campanha ativa ({int(desconto_campanha * 100)}%); ajustado para {int(novo_desc * 100)}%."
         )
-        desconto_ajustado = desconto_campanha
+        desconto_ajustado = novo_desc
 
     # Regra 6: Teto máximo legal de 70% em perecíveis
     if categoria in ["carne", "pescado", "laticinios", "fruta", "charcurtaria"] and desconto_ajustado > 0.70:

@@ -61,7 +61,7 @@ def agente_dynamic_pricing(state: dict) -> dict:
     desconto_max_margem = max(desconto_campanha, round(1 - (preco_minimo_normal / max(0.01, pvp)), 2))
     prejuizo_se_expirar = round(custo + custo_descarte, 2)
 
-    if destino_proposto in ["doacao_externa", "cozinha_interna"]:
+    if destino_proposto in ["doacao_externa", "cozinha_interna", "racao_animal"]:
         return {
             "desconto_proposto": 0.0,
             "preco_proposto": pvp,
@@ -121,6 +121,9 @@ Define o desconto total ótimo (em decimal de 0.0 a 0.70 sobre o PVP) para escoa
             ])
 
             desc = round(max(piso_progressivo, proposta.desconto_proposto), 2)
+            if (excesso_estimado > 0 or dias <= 2) and desc > 0 and desconto_campanha > 0 and desc <= desconto_campanha:
+                desc = min(0.75, round(desconto_campanha + 0.05, 2))
+            preco_final = round(pvp * (1 - desc), 2)
             preco_final = round(pvp * (1 - desc), 2)
 
             return {
@@ -140,6 +143,8 @@ Define o desconto total ótimo (em decimal de 0.0 a 0.70 sobre o PVP) para escoa
         desc_necessario = max(0.10, fator_aceleracao / max(0.5, elasticidade))
         teto_desconto = 0.65 if dias <= 1 else max(0.15, desconto_max_margem)
         desc_proposto = round(max(piso_progressivo, min(desc_necessario, teto_desconto)), 2)
+        if desc_proposto > 0 and desconto_campanha > 0 and desc_proposto <= desconto_campanha:
+            desc_proposto = min(0.75, round(desconto_campanha + 0.05, 2))
 
     preco_final = round(pvp * (1 - desc_proposto), 2)
     return {

@@ -1019,12 +1019,6 @@ with tab2:
     if not itens_unificados:
         st.info("ℹ️ Nenhuma etiqueta encontrada para o filtro ou pesquisa selecionada.")
     else:
-        if filtro_atual == "todos" and not pesquisa_esl and pagina_atual == 1:
-            st.caption(
-                "💡 **Ordem inicial para demonstração:** 1. Salmão *(Validade + Campanha)* · "
-                "2. Bife *(Só Validade)* · 3. Iogurte *(Só Campanha)* · 4. Azeite *(Normal)* · seguidos dos Sacos Surpresa."
-            )
-
         inicio = (pagina_atual - 1) * por_pagina
         fim = inicio + por_pagina
         pagina_items = itens_unificados[inicio:fim]

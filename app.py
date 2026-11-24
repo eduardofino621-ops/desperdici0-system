@@ -422,7 +422,7 @@ def consolidar_sacos_para_esl(sacos_ativos: list[dict]) -> list[dict]:
 
 def executar_orquestracao(cenario_perturbacao: str) -> None:
     fecho_loja_2h = (cenario_perturbacao == "A menos de 2 horas de fechar a loja.")
-    gestor = GestorBaseDadosTemporal(total_produtos=1000, seed=2026)
+    gestor = GestorBaseDadosTemporal(total_produtos=200, seed=2026)
     data_ref = date.today()
     catalogo_copia, lotes_copia = gestor.gerar_dataset_temporal(data_ref=data_ref)
     catalogo_map = {p["produto_id"]: p for p in catalogo_copia}

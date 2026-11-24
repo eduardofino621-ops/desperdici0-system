@@ -23,7 +23,6 @@ CATALOGO_CURADO = {
             ("Hambúrguer de Novilho Angus", "Talho Seleção", [("Pack 2x150g", "pack", 0.30, 3.99), ("Pack 4x150g", "pack", 0.60, 7.49)]),
             ("Entrecosto de Porco", "Beira Tradicional", [("Cuvete 700g", "un", 0.70, 4.89), ("Pack 1,2kg", "pack", 1.20, 7.99)]),
             ("Picanha Maturada", "Açores", [("Peça 900g", "un", 0.90, 16.99), ("Peça 1,3kg", "un", 1.30, 23.99)]),
-            ("Bifanas de Porco", "Talho Seleção", [("Cuvete 400g", "un", 0.40, 3.29), ("Cuvete 800g", "un", 0.80, 6.19)]),
         ]
     },
     "charcutaria": {
@@ -38,14 +37,12 @@ CATALOGO_CURADO = {
             ("Paio York Fatiado", "Nobre", [("Cuvete 120g", "un", 0.12, 1.89), ("Peça 400g", "un", 0.40, 5.49)]),
             ("Alheira de Mirandela IGP", "Eurofumeiro", [("Unidade 220g", "un", 0.22, 2.19), ("Pack 2x220g", "pack", 0.44, 3.99)]),
             ("Bacon Fumado em Tiras", "Izidoro", [("Cuvete 200g", "un", 0.20, 2.39), ("Pack 2x150g", "pack", 0.30, 3.39)]),
-            ("Salpicão Tradicional", "Beira Lamego", [("Cuvete 100g", "un", 0.10, 2.19), ("Peça 300g", "un", 0.30, 5.49)]),
         ]
     },
     "pescado": {
         "un_ref": "kg", "margem": 0.05, "descarte": 0.85, "elasticidade": 1.65, "conservacao": "refrigerado_0_2C",
         "artigos": [
             ("Salmão Fresco Atlântico", "Mar Atlântico", [("Posta 1kg", "kg", 1.00, 18.50), ("Lombo 400g", "un", 0.40, 7.99), ("Pack 2 Postas 500g", "pack", 0.50, 9.69)]),
-            ("Lombos de Bacalhau Fresco", "Riberalves", [("Cuvete 400g", "un", 0.40, 6.49), ("Cuvete 800g", "un", 0.80, 12.29)]),
             ("Dourada Fresca Eviscerada", "Costa Portuguesa", [("Granel 1kg", "kg", 1.00, 9.99), ("Cuvete 600g", "un", 0.60, 6.29)]),
             ("Robalo de Mar Fresco", "Pesca do Dia", [("Granel 1kg", "kg", 1.00, 12.49), ("Cuvete 600g", "un", 0.60, 7.79)]),
             ("Filetes de Pescada Frescos", "Pescanova", [("Cuvete 350g", "un", 0.35, 4.29), ("Cuvete 700g", "un", 0.70, 7.99)]),
@@ -59,10 +56,8 @@ CATALOGO_CURADO = {
     "laticinios": {
         "un_ref": "kg", "margem": 0.06, "descarte": 0.30, "elasticidade": 1.25, "conservacao": "refrigerado_2_6C",
         "artigos": [
-            ("Iogurte Natural (Pack 4)", "Mimosa", [("Pack 4x125g", "pack", 0.50, 1.80), ("Pack 8x125g", "pack", 1.00, 3.29)]),
             ("Iogurte Grego Natural", "Danone Oikos", [("Pack 4x115g", "pack", 0.46, 2.49), ("Balde 1kg", "un", 1.00, 4.39)]),
             ("Iogurte Líquido Morango", "Mimosa", [("Pack 4x160g", "pack", 0.64, 2.19), ("Pack 6x160g", "pack", 0.96, 3.09)]),
-            ("Queijo Gouda Fatiado", "Terra Nostra", [("Cuvete 200g", "un", 0.20, 2.29), ("Cuvete 400g", "un", 0.40, 4.19)]),
             ("Queijo Flamengo Bola", "Terra Nostra", [("Meia Bola 500g", "un", 0.50, 4.69), ("Bola 1kg", "un", 1.00, 8.79)]),
             ("Leite Meio-Gordo UHT", "Agros", [("Pacote 1L", "un", 1.00, 0.95), ("Pack 6x1L", "pack", 6.00, 5.39)]),
             ("Manteiga com Sal", "Mimosa", [("Embalagem 250g", "un", 0.25, 2.39), ("Embalagem 500g", "un", 0.50, 4.49)]),
@@ -91,6 +86,15 @@ CATALOGO_CURADO = {
             ("Baguete Rústica", "Casa do Pão", [("Unidade Avulso (250g)", "un", 0.25, 0.99), ("Pack 2 (500g)", "pack", 0.50, 1.79)]),
             ("Pão com Chouriço", "Forno do Dia", [("Unidade Avulso (160g)", "un", 0.16, 1.69), ("Pack 2 (320g)", "pack", 0.32, 3.09)]),
             ("Regueifa", "Padaria Tradicional", [("Unidade 500g", "un", 0.50, 1.99), ("Unidade 750g", "un", 0.75, 2.89)]),
+            ("Pão Alentejano", "Forno de Lenha", [("Unidade 500g", "un", 0.50, 1.89), ("Unidade 800g", "un", 0.80, 2.79)]),
+            ("Pão de Água", "Padaria Tradicional", [("Unidade Avulso (90g)", "un", 0.09, 0.34), ("Unidade 400g", "un", 0.40, 1.49), ("Unidade 600g", "un", 0.60, 2.15)]),
+            ("Broa de Avintes", "Moinho Velho", [("Unidade 500g", "un", 0.50, 2.19), ("Unidade 800g", "un", 0.80, 3.29)]),
+            ("Pão de Sementes", "Massa Mãe", [("Unidade Avulso (80g)", "un", 0.08, 0.39), ("Unidade 400g", "un", 0.40, 1.89), ("Unidade 600g", "un", 0.60, 2.69)]),
+            ("Bolo do Caco", "Artesanal", [("Unidade Avulso (160g)", "un", 0.16, 0.95), ("Pack 2 (320g)", "pack", 0.32, 1.79), ("Pack 4 (640g)", "pack", 0.64, 3.39)]),
+            ("Pão Integral", "Forno do Dia", [("Unidade Avulso (80g)", "un", 0.08, 0.34), ("Unidade 400g", "un", 0.40, 1.65), ("Unidade 600g", "un", 0.60, 2.35)]),
+            ("Pão de Centeio com Nozes", "Massa Mãe", [("Unidade Avulso (90g)", "un", 0.09, 0.45), ("Unidade 400g", "un", 0.40, 2.09), ("Unidade 600g", "un", 0.60, 2.99)]),
+            ("Pão de Leite", "Arte do Pão", [("Unidade Avulso (65g)", "un", 0.065, 0.35), ("Pack 4 (260g)", "pack", 0.26, 1.29), ("Pack 6 (390g)", "pack", 0.39, 1.89)]),
+            ("Pão de Deus", "Arte do Pão", [("Unidade Avulso (110g)", "un", 0.11, 1.09), ("Pack 2 (220g)", "pack", 0.22, 1.99), ("Pack 4 (440g)", "pack", 0.44, 3.79)]),
         ]
     },
     "fruta": {
@@ -104,7 +108,6 @@ CATALOGO_CURADO = {
             ("Mirtilos Frescos", "Quinta Bio", [("Cuvete 125g", "un", 0.125, 1.79), ("Cuvete 250g", "un", 0.25, 3.19)]),
             ("Kiwi Verde Nacional", "Vale Verde", [("Cuvete 500g", "un", 0.50, 1.89), ("Saco 1kg", "pack", 1.00, 3.39)]),
             ("Uva Branca sem Grainha", "Horta Fresca", [("Cuvete 500g", "un", 0.50, 2.19), ("Cuvete 750g", "un", 0.75, 2.99)]),
-            ("Framboesas Frescas", "Quinta Bio", [("Cuvete 125g", "un", 0.125, 1.99), ("Cuvete 250g", "un", 0.25, 3.59)]),
             ("Manga Maturada", "Frutas do Sol", [("Unidade 450g", "un", 0.45, 1.69), ("Pack 2x450g", "pack", 0.90, 3.19)]),
         ]
     },
@@ -116,7 +119,6 @@ CATALOGO_CURADO = {
             ("Arroz Carolino", "Cigala", [("Pacote 1kg", "un", 1.00, 1.59), ("Pack 2x1kg", "pack", 2.00, 2.99)]),
             ("Arroz Agulha", "Saludães", [("Pacote 1kg", "un", 1.00, 1.49), ("Pack 2x1kg", "pack", 2.00, 2.79)]),
             ("Massa Esparguete", "Nacional", [("Pacote 500g", "un", 0.50, 1.09), ("Pacote 1kg", "un", 1.00, 1.89)]),
-            ("Massa Macarrão Riscado", "Milaneza", [("Pacote 500g", "un", 0.50, 1.15), ("Pacote 1kg", "un", 1.00, 1.99)]),
             ("Bolacha Maria", "Triunfo", [("Pacote 200g", "un", 0.20, 0.99), ("Pack Familiar 800g", "pack", 0.80, 2.89)]),
             ("Bolacha Água e Sal", "Cuétara", [("Pacote 250g", "un", 0.25, 1.29), ("Pack 500g", "pack", 0.50, 2.29)]),
             ("Atum em Posta em Azeite", "Bom Petisco", [("Lata 120g", "un", 0.12, 1.69), ("Pack 3x120g", "pack", 0.36, 4.59)]),
@@ -129,14 +131,12 @@ CATALOGO_CURADO = {
     "bebidas": {
         "un_ref": "L", "margem": 0.08, "descarte": 0.15, "elasticidade": 1.20, "conservacao": "ambiente",
         "artigos": [
-            ("Sumo Laranja 100% do Algarve", "Compal", [("Pacote 1L", "un", 1.00, 1.89), ("Pack 3x200ml", "pack", 0.60, 1.59)]),
             ("Néctar Pêssego Clássico", "Compal", [("Pacote 1L", "un", 1.00, 1.49), ("Pack 4x200ml", "pack", 0.80, 1.79)]),
             ("Água Mineral Natural", "Luso", [("Garrafa 1,5L", "un", 1.50, 0.69), ("Pack 6x1,5L", "pack", 9.00, 3.79)]),
             ("Água Mineral Natural", "Vitalis", [("Garrafa 50cl", "un", 0.50, 0.45), ("Pack 6x1,5L", "pack", 9.00, 3.59)]),
             ("Bebida de Aveia Barista", "Alpro", [("Pacote 1L", "un", 1.00, 2.29), ("Pack 3x1L", "pack", 3.00, 6.39)]),
             ("Bebida de Amêndoa sem Açúcar", "Alpro", [("Pacote 1L", "un", 1.00, 2.19), ("Pack 3x1L", "pack", 3.00, 6.09)]),
             ("Água com Gás Limão", "Frize", [("Garrafa 25cl", "un", 0.25, 0.85), ("Pack 4x25cl", "pack", 1.00, 2.99)]),
-            ("Chá Frio Pêssego", "Lipton Ice Tea", [("Garrafa 1,5L", "un", 1.50, 1.69), ("Pack 6x33cl", "pack", 1.98, 3.49)]),
             ("Sumo de Maçã 100%", "Compal", [("Pacote 1L", "un", 1.00, 1.69), ("Pack 3x200ml", "pack", 0.60, 1.49)]),
         ]
     },
@@ -238,8 +238,9 @@ class GestorBaseDadosTemporal:
 
     def _construir_pool_artigos_reais(self, rng: random.Random) -> list[dict]:
         """
-        Constrói exclusivamente artigos com marcas e formatos reais do retalho português,
-        sem cruzamentos aleatórios entre marcas e produtos.
+        Constrói exclusivamente artigos com marcas e formatos reais do retalho português.
+        Seleciona exatamente 25 produtos de padaria (1 formato por tipo de pão)
+        e os formatos das restantes 7 categorias até atingir total_produtos.
         """
         nomes_reservados = {
             "Salmão Fresco Atlântico",
@@ -248,17 +249,19 @@ class GestorBaseDadosTemporal:
             "Azeite Virgem Extra 0,75L",
         }
 
-        pool = []
+        pool_padaria = []
+        pool_outras = []
+
         for cat_nome, cfg in CATALOGO_CURADO.items():
             for artigo_nome, marca, formatos in cfg["artigos"]:
-                for rotulo_fmt, unidade, conteudo, pvp in formatos:
+                formatos_usar = [rng.choice(formatos)] if cat_nome == "padaria" else formatos
+                for rotulo_fmt, unidade, conteudo, pvp in formatos_usar:
                     nome_completo = f"{artigo_nome} {marca} ({rotulo_fmt})"
                     if nome_completo in nomes_reservados:
                         continue
-                    # Deteta unidades de volume reais (ex: 500ml, 50cl, 1L, 0,75L) sem confundir com "Lombo" ou "Lata"
                     eh_volume = bool(re.search(r"\d\s*(?:ml|cl|L)\b", rotulo_fmt))
                     un_ref = "L" if eh_volume else cfg["un_ref"]
-                    pool.append({
+                    item = {
                         "nome": nome_completo,
                         "categoria": cat_nome,
                         "unidade_medida": unidade,
@@ -269,8 +272,18 @@ class GestorBaseDadosTemporal:
                         "descarte": cfg["descarte"],
                         "elasticidade": cfg["elasticidade"],
                         "conservacao": cfg["conservacao"],
-                    })
+                    }
+                    if cat_nome == "padaria":
+                        pool_padaria.append(item)
+                    else:
+                        pool_outras.append(item)
 
+        rng.shuffle(pool_padaria)
+        rng.shuffle(pool_outras)
+
+        padaria_sel = pool_padaria[:25]
+        max_outras = max(0, self.total_produtos - 4 - len(padaria_sel))
+        pool = padaria_sel + pool_outras[:max_outras]
         rng.shuffle(pool)
         return pool
 
@@ -387,12 +400,10 @@ class GestorBaseDadosTemporal:
 
             tem_validade_curta = idx in indices_validade_curta
 
-            # 2.º BLOCO: Geração de exatamente 5 lotes por produto (200 x 5 = 1.000 lotes)
-            tem_validade_curta = idx in indices_validade_curta
-
+            # 2.º BLOCO: 6 lotes na padaria | 2 lotes nas restantes categorias
             if cat_nome == "padaria":
                 max_d = _max_dias_validade_padaria(nome)
-                dias_pao = sorted([rng.randint(1, max_d) for _ in range(5)])
+                dias_pao = sorted([rng.randint(1, max_d) for _ in range(6)])
                 especificacoes_lotes = [
                     (d_exp, max(3, int(round(vendas_dia * rng.uniform(0.5, 1.4)))), rng.randint(0, 1))
                     for d_exp in dias_pao
@@ -400,10 +411,7 @@ class GestorBaseDadosTemporal:
             elif idx == 1:
                 especificacoes_lotes = [
                     (1, 7.0, 4),
-                    (2, 11.0, 3),
                     (4, 10.0, 1),
-                    (8, 12.0, 1),
-                    (12, 15.0, 0),
                 ]
             elif tem_validade_curta:
                 dias_exp_1 = rng.randint(1, 5)
@@ -413,14 +421,12 @@ class GestorBaseDadosTemporal:
                 if idx % 4 == 0 and dias_exp_1 < 5:
                     dias_exp_2 = min(5, dias_exp_1 + rng.randint(1, 2))
                     especificacoes_lotes.append((dias_exp_2, max(5.0, round(vendas_dia * 1.6, 1)), 1))
-
-                faltam = 5 - len(especificacoes_lotes)
-                dias_futuros = sorted(rng.sample(range(7, 61), faltam))
-                for d_fut in dias_futuros:
+                else:
+                    d_fut = rng.randint(7, 60)
                     qtd_fut = max(5.0, round(vendas_dia * rng.uniform(1.5, 4.0), 1))
                     especificacoes_lotes.append((d_fut, qtd_fut, rng.randint(0, 3)))
             else:
-                dias_lotes = sorted(rng.sample(range(6, 61), 5))
+                dias_lotes = sorted(rng.sample(range(6, 61), 2))
                 especificacoes_lotes = [
                     (d_exp, max(5.0, round(vendas_dia * rng.uniform(1.5, 4.0), 1)), rng.randint(0, 8))
                     for d_exp in dias_lotes

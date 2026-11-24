@@ -1,6 +1,6 @@
 import altair as alt
 import random
-from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode, ColumnsAutoSizeMode
+from st_aggrid import AgGrid, GridOptionsBuilder, JsCode, ColumnsAutoSizeMode
 from datetime import date, datetime
 from urllib.parse import quote
 import streamlit as st
@@ -257,8 +257,8 @@ perturbacao = st.sidebar.selectbox(
     key="select_perturbacao"
 )
 
-simular_btn = st.sidebar.button("▶️ Reexecutar Orquestração / Sincronizar DB", type="primary", use_container_width=True)
-if st.sidebar.button("🗑️ Limpar Histórico da Sessão", use_container_width=True):
+simular_btn = st.sidebar.button("▶️ Reexecutar Orquestração / Sincronizar DB", type="primary", width="stretch")
+if st.sidebar.button("🗑️ Limpar Histórico da Sessão", width="stretch"):
     if st.session_state.get("historico_sessao"):
         st.session_state.historico_sessao = [st.session_state.historico_sessao[0]]
         st.rerun()
@@ -319,14 +319,24 @@ def formatar_data_pt(data_iso: str) -> str:
         return data_iso
 
 def formatar_destino_legivel(destino: str) -> str:
-    CORES_DECISAO = {
-    "Prateleira (Normal/Campanha)": "#475569",
-    "Desc. Validade (ESL)": "#0ea5e9",
-    "Sacos Surpresa": "#f59e0b",
-    "Cozinha Interna": "#a855f7",
-    "Doação (Caridade)": "#10b981",
-    "Doação (Ração Animal)": "#f97316",
-    "Descarte Obrigatório": "#ef4444",
+    mapa = {
+        "prateleira_desconto": "Prateleira (Etiqueta ESL)",
+        "sacos_surpresa": "Sacos Surpresa (Fim de Dia)",
+        "cozinha_interna": "Cozinha Interna (Retirado)",
+        "descarte_obrigatorio": "Descarte Obrigatório",
+        "doacao_externa": "Doação Externa (Instituições de Caridade)",
+        "racao_animal": "Doação Externa (Parceria com Produção de Ração Animal)",
+    }
+    return mapa.get(destino, destino.replace("_", " ").title())
+
+CORES_DECISAO = {
+    "Prateleira (Normal/Campanha)": "#52606D",
+    "Desc. Validade (ESL)": "#1E6F8C",
+    "Sacos Surpresa": "#C88A2E",
+    "Cozinha Interna": "#8B3A7B",
+    "Doação (Caridade)": "#3E8E41",
+    "Doação (Ração Animal)": "#CC6633",
+    "Descarte Obrigatório": "#B8433E",
 }
 
 def classificar_decisao_lote(lote: dict) -> str:
@@ -443,7 +453,7 @@ def renderizar_analise_decisoes(snapshot: dict, snapshot_base: dict | None = Non
             .configure_view(stroke=None)
             .configure_axis(labelColor="#e5e5e5", titleColor="#cbd5e1", gridColor="#242424", labelLimit=220)
         )
-        st.altair_chart(grafico_bar, use_container_width=True)
+        st.altair_chart(grafico_bar, width="stretch")
 
     with col_tab:
         st.markdown("**📋 Resumo Quantitativo**")
@@ -456,12 +466,20 @@ def renderizar_analise_decisoes(snapshot: dict, snapshot_base: dict | None = Non
             df_resumo["Δ"] = df_resumo["Lotes"] - df_resumo["Início"]
             df_resumo["Δ"] = df_resumo["Δ"].apply(lambda v: f"+{v}" if v > 0 else str(v))
             df_resumo = df_resumo[["Decisão", "Início", "Lotes", "Δ", "Percentagem"]]
-        st.dataframe(df_resumo, hide_index=True, use_container_width=True)
+        st.dataframe(df_resumo, hide_index=True, width="stretch")
 
-    # 2. Gráficos de Queijinho (Donut) por Categoria
-    st.markdown("**🥧 Distribuição das Decisões por Categoria (%)**")
+    # 2. Gráfico Stacked Bar (100%) por Categoria
+    tema_atual = getattr(getattr(st.context, "theme", None), "type", "dark") or "dark"
+    eh_light = tema_atual == "light"
+    cor_fundo = "#ffffff" if eh_light else "#111111"
+    cor_texto = "#111827" if eh_light else "#e5e5e5"
+    cor_eixo = "#4b5563" if eh_light else "#cbd5e1"
+    cor_grelha = "#e5e7eb" if eh_light else "#242424"
+    cor_borda = "#ffffff" if eh_light else "#111111"
+
+    st.markdown("**📊 Distribuição das Decisões por Categoria (%)**")
     legenda_html = " &nbsp;&nbsp; ".join(
-        f'<span style="font-size:12px;color:#e5e5e5;">'
+        f'<span style="font-size:12px;color:{cor_texto};">'
         f'<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{cor};margin-right:5px;"></span>'
         f'{nome}</span>'
         for nome, cor in CORES_DECISAO.items()
@@ -469,57 +487,81 @@ def renderizar_analise_decisoes(snapshot: dict, snapshot_base: dict | None = Non
     )
     st.markdown(f'<div style="margin-bottom:10px;">{legenda_html}</div>', unsafe_allow_html=True)
 
-    categorias = sorted(df_dec["Categoria"].unique().tolist())
-    for i in range(0, len(categorias), 4):
-        cols_pie = st.columns(4)
-        for col_p, cat in zip(cols_pie, categorias[i : i + 4]):
-            with col_p:
-                df_cat = df_filt[df_filt["Categoria"] == cat]
-                if df_cat.empty:
-                    st.markdown(f"**{cat}**")
-                    st.caption("Sem lotes neste filtro.")
-                    continue
-                cnt_cat = df_cat["Decisão"].value_counts().reset_index()
-                cnt_cat.columns = ["Decisão", "Lotes"]
-                tot_cat = int(cnt_cat["Lotes"].sum())
-                cnt_cat["Percentagem"] = cnt_cat["Lotes"].apply(
-                    lambda x: f"{(x / max(1, tot_cat)) * 100:.1f}%".replace(".", ",")
-                )
+    ordem_decisoes = list(CORES_DECISAO.keys())
+    mapa_ordem = {d: i for i, d in enumerate(ordem_decisoes)}
 
-                pie = (
-                    alt.Chart(cnt_cat)
-                    .mark_arc(innerRadius=30, outerRadius=62)
-                    .encode(
-                        theta=alt.Theta("Lotes:Q", stack=True),
-                        color=alt.Color(
-                            "Decisão:N",
-                            scale=alt.Scale(domain=list(CORES_DECISAO.keys()), range=list(CORES_DECISAO.values())),
-                            legend=None,
-                        ),
-                        tooltip=["Decisão:N", "Lotes:Q", "Percentagem:N"],
-                    )
-                    .properties(
-                        title=alt.TitleParams(
-                            text=f"{cat} ({tot_cat} lotes)",
-                            color="#f3f3f3",
-                            fontSize=13,
-                            anchor="middle",
-                        ),
-                        height=175,
-                    )
-                    .configure(background="#111111")
-                    .configure_view(stroke=None)
-                )
-                st.altair_chart(pie, use_container_width=True)
-    mapa = {
-        "prateleira_desconto": "Prateleira (Etiqueta ESL)",
-        "sacos_surpresa": "Sacos Surpresa (Fim de Dia)",
-        "cozinha_interna": "Cozinha Interna (Retirado)",
-        "descarte_obrigatorio": "Descarte Obrigatório",
-        "doacao_externa": "Doação Externa (Instituições de Caridade)",
-        "racao_animal": "Doação Externa (Parceria com Produção de Ração Animal)",
-    }
-    return mapa.get(destino, destino.replace("_", " ").title())
+    df_stack = (
+        df_filt.groupby(["Categoria", "Decisão"])
+        .size()
+        .reset_index(name="Lotes")
+    )
+    totais_cat = df_stack.groupby("Categoria")["Lotes"].transform("sum")
+    df_stack["Pct"] = (df_stack["Lotes"] / totais_cat) * 100.0
+    df_stack["Ordem"] = df_stack["Decisão"].map(lambda d: mapa_ordem.get(d, 99))
+    df_stack = df_stack.sort_values(["Categoria", "Ordem"]).reset_index(drop=True)
+
+    df_stack["y_end"] = df_stack.groupby("Categoria")["Pct"].cumsum()
+    df_stack["y_start"] = df_stack["y_end"] - df_stack["Pct"]
+    df_stack["y_mid"] = (df_stack["y_start"] + df_stack["y_end"]) / 2.0
+    df_stack["Pct_Fmt"] = df_stack["Pct"].apply(lambda v: f"{v:.1f}%".replace(".", ","))
+    df_stack["Rotulo"] = df_stack.apply(
+        lambda r: (
+            f"{r['Pct']:.0f}%\n({int(r['Lotes'])} {'lote' if int(r['Lotes']) == 1 else 'lotes'})"
+            if r["Pct"] >= 9.0
+            else ""
+        ),
+        axis=1,
+    )
+
+    barras_stack = (
+        alt.Chart(df_stack)
+        .mark_bar(cornerRadius=5, width={"band": 0.62}, stroke=cor_borda, strokeWidth=1.5)
+        .encode(
+            x=alt.X(
+                "Categoria:N",
+                title=None,
+                axis=alt.Axis(labelAngle=0, labelFontSize=12, labelFontWeight="bold"),
+            ),
+            y=alt.Y(
+                "y_start:Q",
+                title="% de Lotes",
+                scale=alt.Scale(domain=[0, 100]),
+                axis=alt.Axis(labelExpr="datum.value + '%'"),
+            ),
+            y2="y_end:Q",
+            color=alt.Color(
+                "Decisão:N",
+                scale=alt.Scale(domain=ordem_decisoes, range=list(CORES_DECISAO.values())),
+                legend=None,
+            ),
+            tooltip=[
+                alt.Tooltip("Categoria:N", title="Categoria"),
+                alt.Tooltip("Decisão:N", title="Decisão"),
+                alt.Tooltip("Lotes:Q", title="Nº de Lotes"),
+                alt.Tooltip("Pct_Fmt:N", title="Percentagem"),
+            ],
+        )
+    )
+
+    rotulos_stack = (
+        alt.Chart(df_stack)
+        .mark_text(color="#ffffff", fontSize=11, fontWeight="bold", lineBreak="\n")
+        .encode(
+            x=alt.X("Categoria:N"),
+            y=alt.Y("y_mid:Q"),
+            text=alt.Text("Rotulo:N"),
+        )
+    )
+
+    grafico_stack = (
+        (barras_stack + rotulos_stack)
+        .properties(height=400)
+        .configure(background=cor_fundo)
+        .configure_view(stroke=None)
+        .configure_axis(labelColor=cor_texto, titleColor=cor_eixo, gridColor=cor_grelha)
+    )
+    st.altair_chart(grafico_stack, width="stretch")
+
 
 def obter_lotes_ativos_fefo(produto_id: str, lotes_por_prod: dict[str, list[dict]]) -> list[dict]:
     elegiveis = [
@@ -977,6 +1019,10 @@ with tab1:
             else:
                 gb.configure_column(col_nome, width=larg, minWidth=larg)
 
+        # Deteta automaticamente se o utilizador está em Light Mode ou Dark Mode
+        tema_atual = getattr(getattr(st.context, "theme", None), "type", "dark") or "dark"
+        eh_light = tema_atual == "light"
+
         # Coluna fixa à direita, compacta (o título faz wrap em 2 linhas)
         gb.configure_column(
             "Consultar Validação CSP",
@@ -984,7 +1030,7 @@ with tab1:
             minWidth=135,
             pinned="right",
             cellStyle={
-                "color": "#38bdf8",
+                "color": "#0284c7" if eh_light else "#38bdf8",
                 "textDecoration": "underline",
                 "cursor": "pointer",
                 "fontWeight": "600",
@@ -992,49 +1038,91 @@ with tab1:
             onCellClicked=clicar_csp,
         )
 
-        # Paleta neutra Preto & Cinza (listada)
-        custom_css = {
-            ".ag-root-wrapper": {
-                "background-color": "#111111 !important",
-                "border": "1px solid #2c2c2c !important",
-                "border-radius": "8px !important",
-            },
-            ".ag-header": {
-                "background-color": "#1c1c1c !important",
-                "border-bottom": "1px solid #333333 !important",
-            },
-            ".ag-header-cell-text": {
-                "color": "#e5e5e5 !important",
-                "font-weight": "600 !important",
-                "line-height": "1.2 !important",
-            },
-            ".ag-row": {
-                "background-color": "#111111 !important",
-                "color": "#f3f3f3 !important",
-                "border-bottom": "1px solid #242424 !important",
-            },
-            ".ag-row-odd": {
-                "background-color": "#1a1a1a !important",
-            },
-            ".ag-row-hover": {
-            # "background-color": "#262626 !important",
-            "background-color": "rgba(255, 75, 75, 0.16) !important",
-             },
-            ".ag-row-selected": {
-                "background-color": "#2d2d2d !important",
-            },
-            ".ag-cell": {
-                "color": "#f3f3f3 !important",
-            },
-            ".ag-paging-panel": {
-                "background-color": "#1c1c1c !important",
-                "color": "#d4d4d4 !important",
-                "border-top": "1px solid #333333 !important",
-            },
-            ".ag-icon": {
-                "color": "#d4d4d4 !important",
-            },
-        }
+        # Paleta adaptativa: Branca & Cinza (Light) | Preta & Cinza (Dark)
+        if eh_light:
+            custom_css = {
+                ".ag-root-wrapper": {
+                    "background-color": "#ffffff !important",
+                    "border": "1px solid #d1d5db !important",
+                    "border-radius": "8px !important",
+                },
+                ".ag-header": {
+                    "background-color": "#f3f4f6 !important",
+                    "border-bottom": "1px solid #d1d5db !important",
+                },
+                ".ag-header-cell-text": {
+                    "color": "#111827 !important",
+                    "font-weight": "600 !important",
+                    "line-height": "1.2 !important",
+                },
+                ".ag-row": {
+                    "background-color": "#ffffff !important",
+                    "color": "#111827 !important",
+                    "border-bottom": "1px solid #e5e7eb !important",
+                },
+                ".ag-row-odd": {
+                    "background-color": "#f5f5f5 !important",
+                },
+                ".ag-row-hover": {
+                    "background-color": "rgba(255, 75, 75, 0.12) !important",
+                },
+                ".ag-row-selected": {
+                    "background-color": "#e5e7eb !important",
+                },
+                ".ag-cell": {
+                    "color": "#111827 !important",
+                },
+                ".ag-paging-panel": {
+                    "background-color": "#f3f4f6 !important",
+                    "color": "#374151 !important",
+                    "border-top": "1px solid #d1d5db !important",
+                },
+                ".ag-icon": {
+                    "color": "#374151 !important",
+                },
+            }
+        else:
+            custom_css = {
+                ".ag-root-wrapper": {
+                    "background-color": "#111111 !important",
+                    "border": "1px solid #2c2c2c !important",
+                    "border-radius": "8px !important",
+                },
+                ".ag-header": {
+                    "background-color": "#1c1c1c !important",
+                    "border-bottom": "1px solid #333333 !important",
+                },
+                ".ag-header-cell-text": {
+                    "color": "#e5e5e5 !important",
+                    "font-weight": "600 !important",
+                    "line-height": "1.2 !important",
+                },
+                ".ag-row": {
+                    "background-color": "#111111 !important",
+                    "color": "#f3f3f3 !important",
+                    "border-bottom": "1px solid #242424 !important",
+                },
+                ".ag-row-odd": {
+                    "background-color": "#1a1a1a !important",
+                },
+                ".ag-row-hover": {
+                    "background-color": "rgba(255, 75, 75, 0.16) !important",
+                },
+                ".ag-row-selected": {
+                    "background-color": "#2d2d2d !important",
+                },
+                ".ag-cell": {
+                    "color": "#f3f3f3 !important",
+                },
+                ".ag-paging-panel": {
+                    "background-color": "#1c1c1c !important",
+                    "color": "#d4d4d4 !important",
+                    "border-top": "1px solid #333333 !important",
+                },
+                ".ag-icon": {
+                    "color": "#d4d4d4 !important",
+                },
+            }
 
         if "aggrid_key_v" not in st.session_state:
             st.session_state["aggrid_key_v"] = 0
@@ -1043,9 +1131,9 @@ with tab1:
 
         grid_resp = AgGrid(
             df_grid,
-            key=f"tabela_operacoes_{st.session_state['aggrid_key_v']}",
+            key=f"tabela_operacoes_{tema_atual}_{st.session_state['aggrid_key_v']}",
             gridOptions=gb.build(),
-            update_mode=GridUpdateMode.SELECTION_CHANGED,
+            update_on=GridUpdateMode.SELECTION_CHANGED,
             columns_auto_size_mode=ColumnsAutoSizeMode.NO_AUTOSIZE,
             allow_unsafe_jscode=True,
             custom_css=custom_css,
@@ -1111,7 +1199,7 @@ with tab2:
             "⭐ Todos (4 Casos Demo no Topo)",
             key="btn_esl_todos",
             type="primary" if st.session_state.filtro_esl_ativo == "todos" else "secondary",
-            use_container_width=True,
+            width="stretch",
         ):
             _definir_filtro_esl("todos")
             st.rerun()
@@ -1120,7 +1208,7 @@ with tab2:
             f"⚠️ Alterados pelos Agentes ({len(prods_alterados_agentes)} art. + {len(grupos_sacos_esl)} sacos surpresa)",
             key="btn_esl_risco",
             type="primary" if st.session_state.filtro_esl_ativo == "risco" else "secondary",
-            use_container_width=True,
+            width="stretch",
         ):
             _definir_filtro_esl("risco")
             st.rerun()
@@ -1129,7 +1217,7 @@ with tab2:
             f"🛍️ Sacos Surpresa ({len(grupos_sacos_esl)})",
             key="btn_esl_sacos",
             type="primary" if st.session_state.filtro_esl_ativo == "sacos" else "secondary",
-            use_container_width=True,
+            width="stretch",
         ):
             _definir_filtro_esl("sacos")
             st.rerun()
@@ -1154,7 +1242,7 @@ with tab2:
                     cat_label,
                     key=f"btn_esl_cat_{cat_key}",
                     type="primary" if st.session_state.filtro_esl_ativo == cat_key else "secondary",
-                    use_container_width=True,
+                    width="stretch",
                 ):
                     _definir_filtro_esl(cat_key)
                     st.rerun()
@@ -1291,7 +1379,7 @@ with tab2:
                 with cols[idx % 3]:
                     st.markdown(esl_html, unsafe_allow_html=True)
                     btn_saco_key = f"sell_saco_grp_{filtro_atual}_{pagina_atual}_{idx}"
-                    if st.button(f"🛍️ Vender 1 {grupo['titulo']}", key=btn_saco_key, use_container_width=True):
+                    if st.button(f"🛍️ Vender 1 {grupo['titulo']}", key=btn_saco_key, width="stretch"):
                         saco_vender = grupo["sacos_instancias"][0]
                         saco_vender["vendido"] = True
                         lotes_map_sim = {l["lote_id"]: l for l in st.session_state.lotes_simulados}
@@ -1461,7 +1549,7 @@ with tab2:
                 if tem_desconto_validade:
                     lote_prioritario = lotes_com_validade[0]
                     btn_key = f"sell_{filtro_atual}_{prod_id}_{lote_prioritario['lote_id']}_{pagina_atual}_{idx}"
-                    if st.button(f"🛒 Vender {lote_prioritario['lote_id']}", key=btn_key, use_container_width=True):
+                    if st.button(f"🛒 Vender {lote_prioritario['lote_id']}", key=btn_key, width="stretch"):
                         lote_prioritario["quantidade_disponivel"] = 0.0
                         lote_prioritario["estado"] = "esgotado"
                         for row in st.session_state.resultados_simulacao:

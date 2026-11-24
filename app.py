@@ -420,6 +420,14 @@ def renderizar_analise_decisoes(snapshot: dict, snapshot_base: dict | None = Non
         st.info("Sem lotes para apresentar neste filtro.")
         return
 
+    tema_atual = getattr(getattr(st.context, "theme", None), "type", "dark") or "dark"
+    eh_light = tema_atual == "light"
+    cor_fundo = "#ffffff" if eh_light else "#111111"
+    cor_texto = "#111827" if eh_light else "#e5e5e5"
+    cor_eixo = "#4b5563" if eh_light else "#cbd5e1"
+    cor_grelha = "#e5e7eb" if eh_light else "#242424"
+    cor_borda = "#ffffff" if eh_light else "#111111"
+
     # 1. Quantificação global das decisões (Gráfico de Barras + Tabela Comparativa)
     contagem = df_filt["Decisão"].value_counts().reset_index()
     contagem.columns = ["Decisão", "Lotes"]
@@ -431,9 +439,14 @@ def renderizar_analise_decisoes(snapshot: dict, snapshot_base: dict | None = Non
     col_bar, col_tab = st.columns([3, 2], gap="large")
     with col_bar:
         st.markdown("**📊 Quantificação das Decisões por Destino (n.º de lotes)**")
+        max_lotes = int(contagem["Lotes"].max()) if not contagem.empty else 10
         base_bar = alt.Chart(contagem).encode(
             y=alt.Y("Decisão:N", sort="-x", title=None),
-            x=alt.X("Lotes:Q", title="Nº de Lotes"),
+            x=alt.X(
+                "Lotes:Q",
+                title="Nº de Lotes",
+                scale=alt.Scale(domain=[0, max(10, int(max_lotes * 1.15))]),
+            ),
             tooltip=["Decisão:N", "Lotes:Q", "Percentagem:N"],
         )
         barras = base_bar.mark_bar(cornerRadiusEnd=5, height=24).encode(
@@ -443,15 +456,15 @@ def renderizar_analise_decisoes(snapshot: dict, snapshot_base: dict | None = Non
                 legend=None,
             )
         )
-        rotulos = base_bar.mark_text(align="left", dx=6, color="#f3f3f3", fontWeight="bold").encode(
+        rotulos = base_bar.mark_text(align="left", dx=6, color=cor_texto, fontWeight="bold").encode(
             text=alt.Text("Lotes:Q")
         )
         grafico_bar = (
             (barras + rotulos)
             .properties(height=max(190, len(contagem) * 38))
-            .configure(background="#111111")
+            .configure(background=cor_fundo)
             .configure_view(stroke=None)
-            .configure_axis(labelColor="#e5e5e5", titleColor="#cbd5e1", gridColor="#242424", labelLimit=220)
+            .configure_axis(labelColor=cor_texto, titleColor=cor_eixo, gridColor=cor_grelha, labelLimit=220)
         )
         st.altair_chart(grafico_bar, width="stretch")
 
@@ -469,13 +482,6 @@ def renderizar_analise_decisoes(snapshot: dict, snapshot_base: dict | None = Non
         st.dataframe(df_resumo, hide_index=True, width="stretch")
 
     # 2. Gráfico Stacked Bar (100%) por Categoria
-    tema_atual = getattr(getattr(st.context, "theme", None), "type", "dark") or "dark"
-    eh_light = tema_atual == "light"
-    cor_fundo = "#ffffff" if eh_light else "#111111"
-    cor_texto = "#111827" if eh_light else "#e5e5e5"
-    cor_eixo = "#4b5563" if eh_light else "#cbd5e1"
-    cor_grelha = "#e5e7eb" if eh_light else "#242424"
-    cor_borda = "#ffffff" if eh_light else "#111111"
 
     st.markdown("**📊 Distribuição das Decisões por Categoria (%)**")
     legenda_html = " &nbsp;&nbsp; ".join(
@@ -1133,7 +1139,7 @@ with tab1:
             df_grid,
             key=f"tabela_operacoes_{tema_atual}_{st.session_state['aggrid_key_v']}",
             gridOptions=gb.build(),
-            update_on=GridUpdateMode.SELECTION_CHANGED,
+            update_on=["selectionChanged"],
             columns_auto_size_mode=ColumnsAutoSizeMode.NO_AUTOSIZE,
             allow_unsafe_jscode=True,
             custom_css=custom_css,

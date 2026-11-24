@@ -1,3 +1,4 @@
+import altair as alt
 import random
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode, ColumnsAutoSizeMode
 from datetime import date, datetime
@@ -257,6 +258,10 @@ perturbacao = st.sidebar.selectbox(
 )
 
 simular_btn = st.sidebar.button("▶️ Reexecutar Orquestração / Sincronizar DB", type="primary", use_container_width=True)
+if st.sidebar.button("🗑️ Limpar Histórico da Sessão", use_container_width=True):
+    if st.session_state.get("historico_sessao"):
+        st.session_state.historico_sessao = [st.session_state.historico_sessao[0]]
+        st.rerun()
 
 # ==============================================================================
 # FUNÇÕES AUXILIARES
@@ -314,6 +319,198 @@ def formatar_data_pt(data_iso: str) -> str:
         return data_iso
 
 def formatar_destino_legivel(destino: str) -> str:
+    CORES_DECISAO = {
+    "Prateleira (Normal/Campanha)": "#475569",
+    "Desc. Validade (ESL)": "#0ea5e9",
+    "Sacos Surpresa": "#f59e0b",
+    "Cozinha Interna": "#a855f7",
+    "Doação (Caridade)": "#10b981",
+    "Doação (Ração Animal)": "#f97316",
+    "Descarte Obrigatório": "#ef4444",
+}
+
+def classificar_decisao_lote(lote: dict) -> str:
+    destino = lote.get("destino_final", "prateleira_desconto")
+    if destino == "sacos_surpresa":
+        return "Sacos Surpresa"
+    if destino == "cozinha_interna":
+        return "Cozinha Interna"
+    if destino == "doacao_externa":
+        return "Doação (Caridade)"
+    if destino == "racao_animal":
+        return "Doação (Ração Animal)"
+    if destino == "descarte_obrigatorio":
+        return "Descarte Obrigatório"
+    if lote.get("desconto_validade", 0.0) > 0:
+        return "Desc. Validade (ESL)"
+    return "Prateleira (Normal/Campanha)"
+
+def _formatar_delta(atual: float, base: float, sufixo: str = "", casas: int = 0) -> str:
+    diff = atual - base
+    if abs(diff) < 1e-6:
+        return '<span style="color:#64748b;font-weight:600;">(= igual ao início)</span>'
+    sinal = "+" if diff > 0 else ""
+    cor = "#059669" if diff > 0 else "#dc2626"
+    val_fmt = f"{diff:.{casas}f}".replace(".", ",") if casas > 0 else f"{int(round(diff))}"
+    return f'<span style="color:{cor};font-weight:700;">({sinal}{val_fmt}{sufixo} vs. início)</span>'
+
+def renderizar_cartoes_kpi(kpis: dict, kpis_base: dict | None = None) -> None:
+    d_val = ""
+    d_desc = ""
+    d_csp = ""
+    if kpis_base is not None:
+        d_val = " " + _formatar_delta(kpis["pct_validade_curta"], kpis_base["pct_validade_curta"], " pp", casas=1)
+        d_desc = " " + _formatar_delta(kpis["lotes_desc_val"], kpis_base["lotes_desc_val"])
+        d_csp = " " + _formatar_delta(kpis["ajustes_csp"], kpis_base["ajustes_csp"])
+
+    pct_val_str = f"{kpis['pct_validade_curta']:.1f}%".replace(".", ",")
+    pct_camp_str = f"{kpis['pct_campanha']:.1f}%".replace(".", ",")
+    total_lotes_str = f"{kpis['total_lotes']:,}".replace(",", ".")
+
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.markdown(
+            f'<div class="kpi-card"><div class="kpi-title">Catálogo Ativo</div>'
+            f'<div class="kpi-value">{kpis["total_prods"]}</div>'
+            f'<div class="kpi-sub">{total_lotes_str} lotes</div></div>',
+            unsafe_allow_html=True,
+        )
+    with c2:
+        st.markdown(
+            f'<div class="kpi-card"><div class="kpi-title">Validade 1 a 5 Dias</div>'
+            f'<div class="kpi-value" style="color:#dc2626;">{pct_val_str}</div>'
+            f'<div class="kpi-sub">{kpis["prods_validade_curta"]} produtos{d_val}</div></div>',
+            unsafe_allow_html=True,
+        )
+    with c3:
+        st.markdown(
+            f'<div class="kpi-card"><div class="kpi-title">Em Campanha Semanal</div>'
+            f'<div class="kpi-value" style="color:#0369a1;">{pct_camp_str}</div>'
+            f'<div class="kpi-sub">{kpis["prods_campanha"]} produtos</div></div>',
+            unsafe_allow_html=True,
+        )
+    with c4:
+        st.markdown(
+            f'<div class="kpi-card"><div class="kpi-title">Lotes c/ Desc. Validade</div>'
+            f'<div class="kpi-value" style="color:#059669;">{kpis["lotes_desc_val"]}</div>'
+            f'<div class="kpi-sub">{kpis["ajustes_csp"]} ajustes CSP{d_desc}</div></div>',
+            unsafe_allow_html=True,
+        )
+
+def renderizar_analise_decisoes(snapshot: dict, snapshot_base: dict | None = None, chave_prefixo: str = "atual") -> None:
+    df_dec = pd.DataFrame(snapshot["registos_decisao"])
+    so_risco = st.toggle(
+        "Focar apenas nos lotes analisados pelos Agentes (Validade ≤ 5 dias)",
+        value=True,
+        key=f"toggle_risco_{chave_prefixo}",
+    )
+
+    df_filt = df_dec[df_dec["Dias"] <= 5] if so_risco else df_dec
+    if df_filt.empty:
+        st.info("Sem lotes para apresentar neste filtro.")
+        return
+
+    # 1. Quantificação global das decisões (Gráfico de Barras + Tabela Comparativa)
+    contagem = df_filt["Decisão"].value_counts().reset_index()
+    contagem.columns = ["Decisão", "Lotes"]
+    total_lotes_filt = int(contagem["Lotes"].sum())
+    contagem["Percentagem"] = contagem["Lotes"].apply(
+        lambda x: f"{(x / max(1, total_lotes_filt)) * 100:.1f}%".replace(".", ",")
+    )
+
+    col_bar, col_tab = st.columns([3, 2], gap="large")
+    with col_bar:
+        st.markdown("**📊 Quantificação das Decisões por Destino (n.º de lotes)**")
+        base_bar = alt.Chart(contagem).encode(
+            y=alt.Y("Decisão:N", sort="-x", title=None),
+            x=alt.X("Lotes:Q", title="Nº de Lotes"),
+            tooltip=["Decisão:N", "Lotes:Q", "Percentagem:N"],
+        )
+        barras = base_bar.mark_bar(cornerRadiusEnd=5, height=24).encode(
+            color=alt.Color(
+                "Decisão:N",
+                scale=alt.Scale(domain=list(CORES_DECISAO.keys()), range=list(CORES_DECISAO.values())),
+                legend=None,
+            )
+        )
+        rotulos = base_bar.mark_text(align="left", dx=6, color="#f3f3f3", fontWeight="bold").encode(
+            text=alt.Text("Lotes:Q")
+        )
+        grafico_bar = (
+            (barras + rotulos)
+            .properties(height=max(190, len(contagem) * 38))
+            .configure(background="#111111")
+            .configure_view(stroke=None)
+            .configure_axis(labelColor="#e5e5e5", titleColor="#cbd5e1", gridColor="#242424", labelLimit=220)
+        )
+        st.altair_chart(grafico_bar, use_container_width=True)
+
+    with col_tab:
+        st.markdown("**📋 Resumo Quantitativo**")
+        df_resumo = contagem[["Decisão", "Lotes", "Percentagem"]].copy()
+        if snapshot_base is not None:
+            df_b = pd.DataFrame(snapshot_base["registos_decisao"])
+            df_b = df_b[df_b["Dias"] <= 5] if so_risco else df_b
+            mapa_base = df_b["Decisão"].value_counts().to_dict()
+            df_resumo["Início"] = df_resumo["Decisão"].map(lambda d: int(mapa_base.get(d, 0)))
+            df_resumo["Δ"] = df_resumo["Lotes"] - df_resumo["Início"]
+            df_resumo["Δ"] = df_resumo["Δ"].apply(lambda v: f"+{v}" if v > 0 else str(v))
+            df_resumo = df_resumo[["Decisão", "Início", "Lotes", "Δ", "Percentagem"]]
+        st.dataframe(df_resumo, hide_index=True, use_container_width=True)
+
+    # 2. Gráficos de Queijinho (Donut) por Categoria
+    st.markdown("**🥧 Distribuição das Decisões por Categoria (%)**")
+    legenda_html = " &nbsp;&nbsp; ".join(
+        f'<span style="font-size:12px;color:#e5e5e5;">'
+        f'<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{cor};margin-right:5px;"></span>'
+        f'{nome}</span>'
+        for nome, cor in CORES_DECISAO.items()
+        if nome in set(df_filt["Decisão"])
+    )
+    st.markdown(f'<div style="margin-bottom:10px;">{legenda_html}</div>', unsafe_allow_html=True)
+
+    categorias = sorted(df_dec["Categoria"].unique().tolist())
+    for i in range(0, len(categorias), 4):
+        cols_pie = st.columns(4)
+        for col_p, cat in zip(cols_pie, categorias[i : i + 4]):
+            with col_p:
+                df_cat = df_filt[df_filt["Categoria"] == cat]
+                if df_cat.empty:
+                    st.markdown(f"**{cat}**")
+                    st.caption("Sem lotes neste filtro.")
+                    continue
+                cnt_cat = df_cat["Decisão"].value_counts().reset_index()
+                cnt_cat.columns = ["Decisão", "Lotes"]
+                tot_cat = int(cnt_cat["Lotes"].sum())
+                cnt_cat["Percentagem"] = cnt_cat["Lotes"].apply(
+                    lambda x: f"{(x / max(1, tot_cat)) * 100:.1f}%".replace(".", ",")
+                )
+
+                pie = (
+                    alt.Chart(cnt_cat)
+                    .mark_arc(innerRadius=30, outerRadius=62)
+                    .encode(
+                        theta=alt.Theta("Lotes:Q", stack=True),
+                        color=alt.Color(
+                            "Decisão:N",
+                            scale=alt.Scale(domain=list(CORES_DECISAO.keys()), range=list(CORES_DECISAO.values())),
+                            legend=None,
+                        ),
+                        tooltip=["Decisão:N", "Lotes:Q", "Percentagem:N"],
+                    )
+                    .properties(
+                        title=alt.TitleParams(
+                            text=f"{cat} ({tot_cat} lotes)",
+                            color="#f3f3f3",
+                            fontSize=13,
+                            anchor="middle",
+                        ),
+                        height=175,
+                    )
+                    .configure(background="#111111")
+                    .configure_view(stroke=None)
+                )
+                st.altair_chart(pie, use_container_width=True)
     mapa = {
         "prateleira_desconto": "Prateleira (Etiqueta ESL)",
         "sacos_surpresa": "Sacos Surpresa (Fim de Dia)",
@@ -585,6 +782,44 @@ def executar_orquestracao(cenario_perturbacao: str) -> None:
     st.session_state.data_referencia_ativa = data_ref
     st.session_state.db_status = (db_ok, db_msg)
 
+    total_prods = len(catalogo_copia)
+    prods_validade_curta = len({l["produto_id"] for l in lotes_copia if l["dias_para_expirar"] <= 5})
+    prods_campanha = sum(1 for p in catalogo_copia if p["desconto_campanha"] > 0)
+    lotes_desc_val = sum(
+        1 for l in lotes_copia if l.get("desconto_validade", 0.0) > 0 and l["quantidade_disponivel"] > 0
+    )
+    ajustes_csp = sum(1 for l in lotes_copia if l.get("estado_csp") != "Aprovado")
+
+    registos_decisao = [
+        {
+            "Categoria": catalogo_map.get(l["produto_id"], {}).get("categoria", "outros").capitalize(),
+            "Decisão": classificar_decisao_lote(l),
+            "Dias": int(l["dias_para_expirar"]),
+        }
+        for l in lotes_copia
+    ]
+
+    snapshot = {
+        "cenario": cenario_perturbacao,
+        "hora": datetime.now().strftime("%H:%M"),
+        "data_str": data_ref.strftime("%d/%m/%Y"),
+        "kpis": {
+            "total_prods": total_prods,
+            "total_lotes": len(lotes_copia),
+            "prods_validade_curta": prods_validade_curta,
+            "pct_validade_curta": (prods_validade_curta / max(1, total_prods)) * 100,
+            "prods_campanha": prods_campanha,
+            "pct_campanha": (prods_campanha / max(1, total_prods)) * 100,
+            "lotes_desc_val": lotes_desc_val,
+            "ajustes_csp": ajustes_csp,
+        },
+        "registos_decisao": registos_decisao,
+    }
+
+    if "historico_sessao" not in st.session_state:
+        st.session_state.historico_sessao = []
+    st.session_state.historico_sessao.append(snapshot)
+
 
 # ==============================================================================
 # INICIALIZAÇÃO AUTOMÁTICA EM TEMPO REAL
@@ -595,6 +830,7 @@ if "resultados_simulacao" not in st.session_state:
 precisa_recalcular = (
     st.session_state.resultados_simulacao is None
     or simular_btn
+    or st.session_state.get("cenario_ativo") != perturbacao
     or st.session_state.get("data_referencia_ativa") != date.today()
 )
 
@@ -623,48 +859,38 @@ tab1, tab2, tab3 = st.tabs([
 # ABA 1: DASHBOARD DE OPERAÇÕES
 # ------------------------------------------------------------------------------
 with tab1:
-    catalogo_atual = st.session_state.catalogo_simulado
-    lotes_atual = st.session_state.lotes_simulados
-
-    total_prods = len(catalogo_atual)
-    prods_validade_curta = len({l["produto_id"] for l in lotes_atual if l["dias_para_expirar"] <= 5})
-    pct_validade_curta = (prods_validade_curta / total_prods) * 100
-
-    prods_campanha = sum(1 for p in catalogo_atual if p["desconto_campanha"] > 0)
-    pct_campanha = (prods_campanha / total_prods) * 100
-
-    lotes_com_desc_val = [l for l in lotes_atual if l.get("desconto_validade", 0.0) > 0 and l["quantidade_disponivel"] > 0]
-    ajustes_csp = sum(1 for l in lotes_atual if l.get("estado_csp") != "Aprovado")
-
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
+    
+    historico = st.session_state.get("historico_sessao", [])
+    if historico:
+        snap_inicial = historico[0]
         st.markdown(
-            f'<div class="kpi-card"><div class="kpi-title">Catálogo Ativo</div>'
-            f'<div class="kpi-value">{total_prods}</div>'
-            f'<div class="kpi-sub">{len(lotes_atual)} lotes</div></div>',
-            unsafe_allow_html=True,
+            f"📌 **Início de Sessão:** `{snap_inicial['cenario']}` às **{snap_inicial['hora']}** do dia **{snap_inicial['data_str']}**"
         )
-    with c2:
-        st.markdown(
-            f'<div class="kpi-card"><div class="kpi-title">Validade 1 a 5 Dias</div>'
-            f'<div class="kpi-value" style="color:#dc2626;">{pct_validade_curta:.1f}%</div>'
-            f'<div class="kpi-sub">{prods_validade_curta} produtos</div></div>',
-            unsafe_allow_html=True,
-        )
-    with c3:
-        st.markdown(
-            f'<div class="kpi-card"><div class="kpi-title">Em Campanha Semanal</div>'
-            f'<div class="kpi-value" style="color:#0369a1;">{pct_campanha:.1f}%</div>'
-            f'<div class="kpi-sub">{prods_campanha} produtos</div></div>',
-            unsafe_allow_html=True,
-        )
-    with c4:
-        st.markdown(
-            f'<div class="kpi-card"><div class="kpi-title">Lotes c/ Desc. Validade</div>'
-            f'<div class="kpi-value" style="color:#059669;">{len(lotes_com_desc_val)}</div>'
-            f'<div class="kpi-sub">{ajustes_csp} ajustes CSP</div></div>',
-            unsafe_allow_html=True,
-        )
+        renderizar_cartoes_kpi(snap_inicial["kpis"])
+
+        # Histórico acumulado de todas as perturbações testadas nesta sessão
+        for idx_h, snap in enumerate(historico[1:], start=1):
+            st.markdown(
+                f"<hr style='margin:14px 0;border-color:#2c2c2c;'>",
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                f"⚡ **Perturbação #{idx_h}:** \"{snap['cenario']}\" às **{snap['hora']}** do dia **{snap['data_str']}**"
+            )
+            renderizar_cartoes_kpi(snap["kpis"], kpis_base=snap_inicial["kpis"])
+
+        # Painel de Quantificação + Queijinhos por Categoria (mostra a execução mais recente)
+        snap_atual = historico[-1]
+        st.markdown("<br>", unsafe_allow_html=True)
+        with st.expander(
+            f"📊 Quantificação das Decisões & Gráficos por Categoria — {snap_atual['cenario']} ({snap_atual['hora']})",
+            expanded=True,
+        ):
+            renderizar_analise_decisoes(
+                snapshot=snap_atual,
+                snapshot_base=snap_inicial if len(historico) > 1 else None,
+                chave_prefixo=f"snap_{len(historico)}",
+            )
 
     st.markdown("<br>", unsafe_allow_html=True)
 

@@ -835,7 +835,7 @@ precisa_recalcular = (
 )
 
 if precisa_recalcular:
-    with st.spinner("A sincronizar base de dados em tempo real (1.000 lotes) e a executar agentes..."):
+    with st.spinner("A sincronizar base de dados em tempo real (500 lotes) e a executar agentes..."):
         executar_orquestracao(perturbacao)
 
 data_ativa = st.session_state.data_referencia_ativa
@@ -859,7 +859,7 @@ tab1, tab2, tab3 = st.tabs([
 # ABA 1: DASHBOARD DE OPERAÇÕES
 # ------------------------------------------------------------------------------
 with tab1:
-    
+
     historico = st.session_state.get("historico_sessao", [])
     if historico:
         snap_inicial = historico[0]

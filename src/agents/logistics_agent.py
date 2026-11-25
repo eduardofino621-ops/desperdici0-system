@@ -12,6 +12,9 @@ class DecisaoLogistica(BaseModel):
         description="Justificação operacional curta (máximo 2 frases)."
     )
 
+def _eh_terco_sacos_surpresa(lote_id: str) -> bool:
+    digitos = "".join(c for c in str(lote_id) if c.isdigit())
+    return (int(digitos) % 3 == 0) if digitos else False
 
 def agente_logistica_doacao(state: dict) -> dict:
     lote = state.get("lote_atual", {})
@@ -39,19 +42,44 @@ def agente_logistica_doacao(state: dict) -> dict:
         }
 
     if categoria == "padaria":
+        lote_id = lote.get("lote_id", "")
+        eh_terco = _eh_terco_sacos_surpresa(lote_id)
+
         if dias == 1 and fecho_loja_2h and quantidade > 0:
             return {
-                "destino_proposto": "sacos_surpresa",
-                "razao_logistica": f"A <= 2h do fecho: {quantidade} {unidade} de padaria (1d) alocados à pool de sacos surpresa.",
-            }
-        if excesso > 0 and cobertura > (dias * 3.2):
-            return {
                 "destino_proposto": "racao_animal",
-                "razao_logistica": f"Excesso extremo de padaria ({quantidade} {unidade}); encaminhado para farinha de ração animal (cozinha proibida).",
+                "razao_logistica": (
+                    f"A <= 2h do fecho: pão de véspera ({quantidade} {unidade}, 1d) terminou a janela comercial; "
+                    "encaminhado para farinha de ração animal."
+                ),
+            }
+        if dias == 1 and not fecho_loja_2h and quantidade > 0:
+            if eh_terco:
+                return {
+                    "destino_proposto": "sacos_surpresa",
+                    "razao_logistica": (
+                        f"Operação diurna: 1/3 do pão de véspera ({quantidade} {unidade}, 1d) alocado à pool de sacos surpresa."
+                    ),
+                }
+            return {
+                "destino_proposto": "prateleira_desconto",
+                "razao_logistica": "Operação diurna: restantes 2/3 do pão de véspera mantidos em prateleira a preço normal.",
+            }
+        if dias == 2 and fecho_loja_2h and quantidade > 0:
+            if eh_terco:
+                return {
+                    "destino_proposto": "sacos_surpresa",
+                    "razao_logistica": (
+                        f"A <= 2h do fecho: 1/3 do pão do dia ({quantidade} {unidade}, 2d) alocado à pool de sacos surpresa."
+                    ),
+                }
+            return {
+                "destino_proposto": "prateleira_desconto",
+                "razao_logistica": "A <= 2h do fecho: restantes 2/3 do pão do dia mantidos em prateleira para o dia seguinte.",
             }
         return {
             "destino_proposto": "prateleira_desconto",
-            "razao_logistica": "Padaria mantida em prateleira a preço normal fora da janela de 2h antes do fecho (anti-canibalismo).",
+            "razao_logistica": "Padaria mantida em prateleira a preço normal (anti-canibalismo).",
         }
 
     # Em operação normal, mantém na prateleira ESL para escoamento dinâmico;

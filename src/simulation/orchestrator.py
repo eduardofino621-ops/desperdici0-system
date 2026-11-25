@@ -9,6 +9,7 @@ from src.csp.constraints import validar_regras_csp
 from src.database.db_manager import GestorBaseDadosTemporal
 from src.rag.retriever import RecuperadorRAG
 from src.simulation.mock_db import calcular_preco_efetivo_lote
+from src.simulation.weather_service import obter_meteorologia_atual
 
 MAPA_DESTINOS = {
     "prateleira_desconto": "Prateleira (Etiqueta ESL)",
@@ -148,6 +149,7 @@ def _processar_lote_critico(
     rag_retriever: RecuperadorRAG,
     perturbacoes_ativas: list[str],
     data_ref: date,
+    meteo: dict,
 ) -> tuple[dict, dict]:
     pvp = prod.get("pvp", 0.0)
     desc_campanha = prod.get("desconto_campanha", 0.0)
@@ -163,6 +165,7 @@ def _processar_lote_critico(
         "rag_retriever": rag_retriever,
         "perturbacoes_ativas": perturbacoes_ativas,
         "data_referencia": data_ref,
+        "meteorologia": meteo,
     }
 
     res_inv = agente_controlo_inventario(estado_grafo)
@@ -247,14 +250,29 @@ def _processar_lote_critico(
     return linha_tabela, log_card
 
 
-def correr_simulacao(cenario_perturbacao: str, perturbacoes_ativas: list[str]) -> dict:
+def correr_simulacao(
+    cenario_perturbacao: str,
+    perturbacoes_ativas: list[str],
+    modo_meteo: str = "Automático (Tempo Real - Coimbra)",
+) -> dict:
     fecho_loja_2h = "A menos de 2 horas de fechar a loja." in perturbacoes_ativas
     gestor = GestorBaseDadosTemporal(total_produtos=200, seed=2026)
     data_ref = date.today()
     rag_retriever = RecuperadorRAG()
+    meteo = obter_meteorologia_atual(modo_override=modo_meteo)
+
     catalogo_copia, lotes_copia = gestor.gerar_dataset_temporal(data_ref=data_ref)
     catalogo_map = {p["produto_id"]: p for p in catalogo_copia}
 
+    # 1. Ajuste de procura pela meteorologia (Open-Meteo ou simulação)
+    if meteo["fator_procura"] != 1.0:
+        for p in catalogo_copia:
+            if meteo["fator_procura"] < 1.0 or p.get("categoria") in ["bebidas", "fruta", "carne"]:
+                p["vendas_medias_diarias"] = max(
+                    0.2, round(p["vendas_medias_diarias"] * meteo["fator_procura"], 2)
+                )
+
+    # 2. Perturbações operacionais da sidebar
     if "Quebra Repentina de Clientes (-50% Procura)" in perturbacoes_ativas:
         for p in catalogo_copia:
             p["vendas_medias_diarias"] = max(0.2, round(p["vendas_medias_diarias"] * 0.5, 2))
@@ -336,6 +354,7 @@ def correr_simulacao(cenario_perturbacao: str, perturbacoes_ativas: list[str]) -
                         rag_retriever,
                         perturbacoes_ativas,
                         data_ref,
+                        meteo,
                     ),
                 )
                 for idx, lote, prod in tarefas_criticas
@@ -391,6 +410,286 @@ def correr_simulacao(cenario_perturbacao: str, perturbacoes_ativas: list[str]) -
         "sacos_surpresa_lista": sacos_surpresa,
         "cenario_ativo": cenario_perturbacao,
         "data_referencia_ativa": data_ref,
+        "meteorologia_ativa": meteo,
         "db_status": (db_ok, db_msg),
         "snapshot": snapshot,
+    }
+
+def formatar_numero_pt(valor: float, casas_decimais: int = 0) -> str:
+    formatado = f"{valor:,.{casas_decimais}f}"
+    return formatado.replace(",", " ").replace(".", ",")
+
+
+def simular_horizonte_temporal(
+    dias_simulacao: int = 7,
+    modo_meteo: str = "Automático (Tempo Real - Coimbra)",
+    combinar_perturbacoes_aleatorias: bool = True,
+) -> dict:
+    """
+    Executa uma simulação acelerada de N dias:
+    - Avança o calendário dia a dia;
+    - Injeta perturbações e condições meteorológicas variáveis;
+    - Simula compras reais (FEFO + elasticidade-preço + Sacos Surpresa);
+    - Regista unidades vendidas, encaminhadas (doação/cozinha) e desperdiçadas (expiradas);
+    - Calcula a Taxa de Salvamento (TS = ((QVD + QD + QR) / QTAR) * 100) em kg.
+    """
+    qvd_kg_total = 0.0   # Quantidade Vendida com Desconto (kg)
+    qd_kg_total = 0.0    # Quantidade Doada (kg)
+    qr_kg_total = 0.0    # Quantidade Reaproveitada: cozinha interna + ração animal (kg)
+    qexp_kg_total = 0.0  # Quantidade em risco que expirou sem venda (kg)
+    passos_execucao = []
+
+    rng = random.Random(2026)
+    gestor = GestorBaseDadosTemporal(total_produtos=200, seed=2026)
+    data_inicial = date.today()
+    rag_retriever = RecuperadorRAG()
+    catalogo_base, lotes_ativos = gestor.gerar_dataset_temporal(data_ref=data_inicial)
+    catalogo_map = {p["produto_id"]: p for p in catalogo_base}
+
+    cenarios_possiveis = [
+        [],
+        ["A menos de 2 horas de fechar a loja."],
+        ["Quebra Repentina de Clientes (-50% Procura)"],
+        ["Feriado / Loja Fechada Amanhã (Urgência Máxima)"],
+        ["Pico de Stock Excedente em Frutas e Carne"],
+        ["A menos de 2 horas de fechar a loja.", "Quebra Repentina de Clientes (-50% Procura)"],
+    ]
+    modos_meteo_ciclo = [
+        modo_meteo,
+        "Simular: Chuva Intensa / Temporal",
+        "Simular: Calor Elevado (> 30°C)",
+        "Automático (Tempo Real - Coimbra)",
+    ]
+
+    evolucao_diaria = []
+    desperdicio_por_categoria: dict[str, float] = {}
+    custo_desperdicio_total = 0.0
+    receita_total_recuperada = 0.0
+    total_un_vendidas = 0.0
+    total_un_doadas_cozinha = 0.0
+    total_un_desperdicadas = 0.0
+
+    for dia_idx in range(dias_simulacao):
+        data_corrente = date.fromordinal(data_inicial.toordinal() + dia_idx)
+
+        # Escolhe combinação de perturbações e clima para este dia
+        if combinar_perturbacoes_aleatorias:
+            perturbs_dia = (
+                cenarios_possiveis[dia_idx % len(cenarios_possiveis)]
+                if dia_idx % 2 == 1
+                else rng.choice(cenarios_possiveis[:3])
+            )
+            meteo_dia_modo = modos_meteo_ciclo[dia_idx % len(modos_meteo_ciclo)]
+        else:
+            perturbs_dia = []
+            meteo_dia_modo = modo_meteo
+
+        fecho_2h = "A menos de 2 horas de fechar a loja." in perturbs_dia
+        quebra_clientes = "Quebra Repentina de Clientes (-50% Procura)" in perturbs_dia
+        feriado_amanha = "Feriado / Loja Fechada Amanhã (Urgência Máxima)" in perturbs_dia
+        pico_stock = "Pico de Stock Excedente em Frutas e Carne" in perturbs_dia
+        meteo = obter_meteorologia_atual(modo_override=meteo_dia_modo)
+
+        if pico_stock:
+            for lote in lotes_ativos:
+                prod = catalogo_map.get(lote["produto_id"], {})
+                if prod.get("categoria") in ["carne", "fruta"] and lote["quantidade_disponivel"] > 0:
+                    lote["quantidade_disponivel"] = round(lote["quantidade_disponivel"] * 1.4, 1)
+
+        dias_alvo_sacos = 2 if fecho_2h else 1
+        stock_padaria_urgente = sum(
+            l["quantidade_disponivel"] * catalogo_map.get(l["produto_id"], {}).get("conteudo_liquido", 0.10)
+            for l in lotes_ativos
+            if l["dias_para_expirar"] == dias_alvo_sacos
+            and l["quantidade_disponivel"] > 0
+            and catalogo_map.get(l["produto_id"], {}).get("categoria") == "padaria"
+        )
+
+        # 1. Decisão dos Agentes + CSP para lotes críticos do dia
+        tarefas = []
+        for idx, lote in enumerate(lotes_ativos):
+            if lote["quantidade_disponivel"] <= 0 or lote.get("estado") == "expirado":
+                continue
+            prod = catalogo_map[lote["produto_id"]]
+            if feriado_amanha and lote["dias_para_expirar"] <= 2:
+                lote["dias_para_expirar"] = 1
+
+            if lote["dias_para_expirar"] <= 5:
+                tarefas.append((idx, lote, prod))
+            else:
+                lote["desconto_validade"] = 0.0
+                _, preco_f = calcular_preco_efetivo_lote(lote, prod)
+                lote["preco_final_atual"] = preco_f
+                lote["destino_final"] = "prateleira_desconto"
+
+        if tarefas:
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                futs = [
+                    executor.submit(
+                        _processar_lote_critico,
+                        lote,
+                        prod,
+                        catalogo_base,
+                        stock_padaria_urgente,
+                        fecho_2h,
+                        rag_retriever,
+                        perturbs_dia,
+                        data_corrente,
+                        meteo,
+                    )
+                    for _, lote, prod in tarefas
+                ]
+                for fut in futs:
+                    fut.result()
+
+        # 2. Simulação de Vendas do Dia (FEFO + Elasticidade + Perturbações)
+        lotes_por_prod: dict[str, list[dict]] = {}
+        for l in lotes_ativos:
+            if l["quantidade_disponivel"] > 0 and l.get("estado") != "expirado":
+                lotes_por_prod.setdefault(l["produto_id"], []).append(l)
+
+        vendidas_dia = 0.0
+        doadas_dia = 0.0
+        desperdicadas_dia = 0.0
+        receita_dia = 0.0
+
+        # Vendas normais e com desconto na prateleira
+        for prod_id, lista_lotes in lotes_por_prod.items():
+            prod = catalogo_map[prod_id]
+            peso_unit = 1.0 if prod.get("unidade_medida") == "kg" else float(prod.get("conteudo_liquido", 0.10))
+            elegiveis = obter_lotes_ativos_fefo(prod_id, lotes_por_prod)
+            if not elegiveis:
+                continue
+
+            fator_dia = meteo["fator_procura"] * (0.50 if quebra_clientes else 1.0)
+            procura_base = prod.get("vendas_medias_diarias", 2.0) * fator_dia * rng.uniform(0.85, 1.15)
+
+            for lote in elegiveis:
+                if procura_base <= 0:
+                    break
+                desc_ativo = max(lote.get("desconto_validade", 0.0), prod.get("desconto_campanha", 0.0))
+                elast = prod.get("elasticidade_preco", 1.2)
+                procura_lote = procura_base * (1.0 + desc_ativo * elast)
+                qtd_vendida = min(lote["quantidade_disponivel"], procura_lote)
+                if prod.get("unidade_medida") != "kg":
+                    qtd_vendida = float(int(round(qtd_vendida)))
+
+                if qtd_vendida > 0:
+                    lote["quantidade_disponivel"] = round(lote["quantidade_disponivel"] - qtd_vendida, 2)
+                    receita_dia += qtd_vendida * lote.get("preco_final_atual", prod["pvp"])
+                    vendidas_dia += qtd_vendida
+                    if lote.get("desconto_validade", 0.0) > 0:
+                        qvd_kg_total += qtd_vendida * peso_unit
+                    procura_base = max(0.0, procura_base - (qtd_vendida / (1.0 + desc_ativo * elast)))
+
+        # Vendas de Sacos Surpresa e encaminhamento para Cozinha/Doação/Ração
+        sacos_dia = construir_sacos_surpresa_equilibrados(lotes_ativos, catalogo_map, peso_alvo_kg=0.50, max_sacos=10)
+        taxa_venda_sacos = 0.65 if quebra_clientes else 0.90
+        for saco in sacos_dia:
+            if rng.random() <= taxa_venda_sacos:
+                receita_dia += saco["preco_final"]
+                qvd_kg_total += saco["peso_kg"]
+                for lid, q_cons in saco["lotes_consumo"].items():
+                    for l in lotes_ativos:
+                        if l["lote_id"] == lid:
+                            abat = min(l["quantidade_disponivel"], q_cons)
+                            l["quantidade_disponivel"] = round(l["quantidade_disponivel"] - abat, 2)
+                            vendidas_dia += abat
+
+        for lote in lotes_ativos:
+            if lote["quantidade_disponivel"] <= 0 or lote.get("estado") == "expirado":
+                continue
+            dest = lote.get("destino_final", "prateleira_desconto")
+            if dest in ["cozinha_interna", "doacao_externa", "racao_animal"]:
+                prod = catalogo_map[lote["produto_id"]]
+                peso_unit = 1.0 if prod.get("unidade_medida") == "kg" else float(prod.get("conteudo_liquido", 0.10))
+                kg_lote = lote["quantidade_disponivel"] * peso_unit
+
+                if dest == "doacao_externa":
+                    qd_kg_total += kg_lote
+                else:
+                    qr_kg_total += kg_lote
+
+                doadas_dia += lote["quantidade_disponivel"]
+                lote["quantidade_disponivel"] = 0.0
+                lote["estado"] = "encaminhado"
+
+        # 3. Fim do Dia: Avançar 1 dia na validade e contabilizar desperdício real
+        for lote in lotes_ativos:
+            if lote["quantidade_disponivel"] <= 0 or lote.get("estado") == "expirado":
+                continue
+            lote["dias_para_expirar"] -= 1
+            if lote["dias_para_expirar"] <= 0:
+                qtd_exp = lote["quantidade_disponivel"]
+                prod = catalogo_map[lote["produto_id"]]
+                peso_unit = 1.0 if prod.get("unidade_medida") == "kg" else float(prod.get("conteudo_liquido", 0.10))
+                cat = prod.get("categoria", "outros").capitalize()
+
+                qexp_kg_total += qtd_exp * peso_unit
+                desperdicadas_dia += qtd_exp
+                desperdicio_por_categoria[cat] = round(desperdicio_por_categoria.get(cat, 0.0) + qtd_exp, 1)
+                custo_desperdicio_total += qtd_exp * (prod["custo_aquisicao"] + prod["custo_descarte"])
+
+                lote["quantidade_disponivel"] = 0.0
+                lote["estado"] = "expirado"
+                lote["dia_expiracao_sim"] = dia_idx + 1
+
+        total_un_vendidas += vendidas_dia
+        total_un_doadas_cozinha += doadas_dia
+        total_un_desperdicadas += desperdicadas_dia
+        receita_total_recuperada += receita_dia
+
+        evolucao_diaria.append({
+            "Dia": f"Dia {dia_idx + 1} ({data_corrente.strftime('%d/%m')})",
+            "Cenário / Perturbações": ", ".join(perturbs_dia) if perturbs_dia else "Operação Normal",
+            "Clima": meteo["descricao"],
+            "Vendidas": round(vendidas_dia, 1),
+            "Doação / Cozinha": round(doadas_dia, 1),
+            "Desperdiçadas (Expiradas)": round(desperdicadas_dia, 1),
+            "Receita (€)": round(receita_dia, 2),
+        })
+
+        lotes_expirados_nomes = [
+            f"{catalogo_map[l['produto_id']]['nome']} ({l['lote_id']})"
+            for l in lotes_ativos
+            if l.get("estado") == "expirado" and l.get("dia_expiracao_sim") == dia_idx + 1
+        ]
+
+        passos_execucao.append({
+            "dia_num": dia_idx + 1,
+            "data_str": data_corrente.strftime("%d/%m/%Y"),
+            "cenario": ", ".join(perturbs_dia) if perturbs_dia else "Operação Normal",
+            "clima": meteo["descricao"],
+            "fator_procura": round(meteo["fator_procura"] * (0.50 if quebra_clientes else 1.0), 2),
+            "lotes_analisados_agentes": len(tarefas),
+            "sacos_criados": len(sacos_dia),
+            "vendidas": round(vendidas_dia, 1),
+            "doadas": round(doadas_dia, 1),
+            "desperdicadas": round(desperdicadas_dia, 1),
+            "receita": round(receita_dia, 2),
+            "exemplos_expirados": lotes_expirados_nomes[:4],
+        })
+
+    total_movimentado = max(1.0, total_un_vendidas + total_un_doadas_cozinha + total_un_desperdicadas)
+    taxa_desperdicio_pct = (total_un_desperdicadas / total_movimentado) * 100
+
+    qtar_kg_total = qvd_kg_total + qd_kg_total + qr_kg_total + qexp_kg_total
+    ts_pct = ((qvd_kg_total + qd_kg_total + qr_kg_total) / max(0.01, qtar_kg_total)) * 100
+
+    return {
+        "dias_simulados": dias_simulacao,
+        "total_vendidas": round(total_un_vendidas, 1),
+        "total_doadas_cozinha": round(total_un_doadas_cozinha, 1),
+        "total_desperdicadas": round(total_un_desperdicadas, 1),
+        "taxa_desperdicio_pct": round(taxa_desperdicio_pct, 2),
+        "receita_total": round(receita_total_recuperada, 2),
+        "custo_desperdicio": round(custo_desperdicio_total, 2),
+        "qvd_kg": round(qvd_kg_total, 1),
+        "qd_kg": round(qd_kg_total, 1),
+        "qr_kg": round(qr_kg_total, 1),
+        "qtar_kg": round(qtar_kg_total, 1),
+        "ts_pct": round(ts_pct, 2),
+        "evolucao_diaria": evolucao_diaria,
+        "desperdicio_por_categoria": desperdicio_por_categoria,
+        "passos_execucao": passos_execucao,
     }

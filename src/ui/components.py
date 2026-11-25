@@ -20,6 +20,19 @@ def mostrar_popup_agentes(lote_id: str) -> None:
     st.markdown(f"### {item['produto_id']} ({item['lote_id']}) — {item['nome']}")
     st.caption(f"Validade: {item['dias']}d | {badge_risco} | Resultado: {item['preco_final']} [{badge_csp}]")
 
+    # ==========================================================================
+    # BLOCO VISUAL DO RAG (EVIDÊNCIAS RECUPERADAS)
+    # ==========================================================================
+    evidencias_rag = item.get("contexto_rag", [])
+    with st.expander(f"📚 Contexto Recuperado via RAG ({len(evidencias_rag)} evidências)", expanded=True):
+        if evidencias_rag:
+            for ev in evidencias_rag:
+                score_pct = int(round(ev.get("score", 0.0) * 100))
+                st.markdown(f"**`{ev['id']}`** — Relevância TF-IDF: `{score_pct}%`")
+                st.caption(ev["texto"])
+        else:
+            st.caption("Nenhuma regra sazonal ou histórica ultrapassou o limiar mínimo de similaridade para este lote.")
+
     st.markdown(f"**1️⃣ Agente de Controlo de Inventário** *(Stock: {item['quantidade']} | Excesso previsto: {item['excesso']})*")
     st.info(item["parecer_inventario"])
 
@@ -36,7 +49,6 @@ def mostrar_popup_agentes(lote_id: str) -> None:
         for erro in item["csp_erros"]:
             st.warning(f"Intervenção CSP: {erro}")
         st.markdown(f"**Resultado Corrigido:** Desconto **{item['desconto_final']}** ({item['preco_final']}) | Destino: **{item['destino_final']}**.")
-
 
 def _formatar_delta(atual: float, base: float, sufixo: str = "", casas: int = 0) -> str:
     diff = atual - base
@@ -60,8 +72,8 @@ def renderizar_cartoes_kpi(kpis: dict, kpis_base: dict | None = None) -> None:
     with c1:
         st.markdown(
             f'<div class="kpi-card"><div class="kpi-title">Catálogo Ativo</div>'
-            f'<div class="kpi-value">{kpis["total_prods"]}</div>'
-            f'<div class="kpi-sub">{total_lotes_str} lotes</div></div>',
+            f'<div class="kpi-value">{total_lotes_str}</div>'
+            f'<div class="kpi-sub">{kpis["total_prods"]} produtos</div></div>',
             unsafe_allow_html=True,
         )
     with c2:

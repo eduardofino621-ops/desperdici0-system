@@ -43,6 +43,7 @@ def agente_controlo_inventario(state: dict) -> dict:
     codigo_gs1 = lote.get("codigo_gs1_raw", "N/A")
     estado_lote = lote.get("estado", "ativo")
 
+    meteo = state.get("meteorologia")
     data_ref = state.get("data_referencia", date.today())
     data_hoje = data_ref.isoformat()
     perturbacoes = state.get("perturbacoes_ativas", [])
@@ -51,7 +52,7 @@ def agente_controlo_inventario(state: dict) -> dict:
     rag = state.get("rag_retriever")
     contexto_rag = state.get("contexto_rag", [])
     if rag and not contexto_rag:
-        query_rag = construir_query_contextual_rag(produto, lote, perturbacoes, data_ref)
+        query_rag = construir_query_contextual_rag(produto, lote, perturbacoes, data_ref, meteo)
         contexto_rag = rag.recuperar_contexto(query_rag, categoria=categoria, top_k=2)
 
     bloco_rag = (
@@ -108,11 +109,10 @@ Avalia o risco de desperdício deste lote específico considerando o contexto RA
         except Exception:
             pass
 
-    ref_rag = f" [RAG: {', '.join(c['id'] for c in contexto_rag)}]" if contexto_rag else ""
     parecer = (
         f"Análise local ({data_hoje}): Lote {lote_id} de {nome} com {quantidade} {unidade} "
         f"(validade {data_validade}, {dias_restantes}d restantes, PUM {pum_str}). "
-        f"Excesso previsto: {excesso_estimado} {unidade}. Risco crítico: {risco_critico}.{ref_rag}"
+        f"Excesso previsto: {excesso_estimado} {unidade}. Risco crítico: {risco_critico}."
     )
     return {
         "parecer_inventario": parecer,

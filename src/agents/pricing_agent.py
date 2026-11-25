@@ -151,8 +151,13 @@ Define o desconto total ótimo (em decimal de 0.0 a 0.70 sobre o PVP) para escoa
 
     # Fallback determinístico sensibilizado pelo RAG
     ids_rag = {c["id"] for c in contexto_rag}
-    bonus_rag = 0.05 if ({"CICLO-FIM-MES-02", "METEO-CHUVA-01"} & ids_rag) else 0.0
-
+    # Fallback determinístico sensibilizado pelo RAG
+    ids_rag = {c["id"] for c in contexto_rag}
+    bonus_rag = (
+        0.05
+        if ({"Ciclo Mensal: Fim do Mês (Contenção)", "Meteorologia: Dia de Chuva / Temporal"} & ids_rag)
+        else 0.0
+    )
     if excesso_estimado <= 0 and dias > 2:
         desc_proposto = desconto_campanha
     else:
@@ -167,7 +172,6 @@ Define o desconto total ótimo (em decimal de 0.0 a 0.70 sobre o PVP) para escoa
     pvp_fmt = f"{pvp:.2f}€".replace(".", ",")
     preco_fmt = f"{preco_final:.2f}€".replace(".", ",")
     pum_fmt = _calcular_pum(preco_final, produto).replace(".", ",")
-    ref_rag = f" [Evidências RAG: {', '.join(c['id'] for c in contexto_rag)}]" if contexto_rag else ""
     return {
         "desconto_proposto": desc_proposto,
         "preco_proposto": preco_final,
@@ -175,6 +179,6 @@ Define o desconto total ótimo (em decimal de 0.0 a 0.70 sobre o PVP) para escoa
         "raciocinio_pricing": (
             f"Desconto progressivo FEFO de {int(desc_proposto * 100)}% sobre o PVP de {pvp_fmt} "
             f"(preço proposto: {preco_fmt}, PUM: {pum_fmt}) aplicado para {dias} dia(s) de validade "
-            f"e excesso de {excesso_estimado} {unidade}.{ref_rag}"
+            f"e excesso de {excesso_estimado} {unidade}."
         )
     }

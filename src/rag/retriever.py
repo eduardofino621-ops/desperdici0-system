@@ -10,11 +10,15 @@ def construir_query_contextual_rag(
     lote: dict,
     perturbacoes_ativas: list[str],
     data_ref: date,
+    meteo: dict | None = None,
 ) -> str:
     partes = [
         f"Produto {prod.get('nome', '')} categoria {prod.get('categoria', 'geral')}",
         f"validade {lote.get('dias_para_expirar', 3)} dias",
     ]
+
+    if meteo and meteo.get("condicao_rag"):
+        partes.append(meteo["condicao_rag"])
 
     if data_ref.day <= 10:
         partes.append("início do mês maior procura poder de compra")

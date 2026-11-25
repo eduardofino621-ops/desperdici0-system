@@ -929,6 +929,18 @@ with tab1:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
+    f1, f2 = st.columns([2, 1])
+    with f1:
+        pesquisa_tab = st.text_input(
+            "🔎 Filtrar inventário por produto, código ou lote:",
+            placeholder="Ex: Salmão, Pão, PROD-0001, LOTE1001...",
+        )
+    with f2:
+        filtro_validade_tab = st.selectbox(
+            "Filtrar por destino/validade:",
+            ["Todos os Lotes", "1 a 5 dias", "Sacos Surpresa", "Superior a 5 dias"],
+        )
+
     if "filtro_cat_tab1" not in st.session_state:
         st.session_state.filtro_cat_tab1 = None
 
@@ -940,9 +952,8 @@ with tab1:
         ("laticinios", "🥛 Laticínios"),
         ("mercearia", "🛒 Mercearia"),
         ("padaria", "🥖 Padaria"),
-        ("pescado", "🐟 Pescado"), 
+        ("pescado", "🐟 Pescado"),
     ]
-
     for linha_cats in (categorias_tab1[:4], categorias_tab1[4:]):
         cols_cat = st.columns(4)
         for col_c, (cat_key, cat_label) in zip(cols_cat, linha_cats):
@@ -956,18 +967,6 @@ with tab1:
                 ):
                     st.session_state.filtro_cat_tab1 = None if ativa else cat_key
                     st.rerun()
-
-    f1, f2 = st.columns([2, 1])
-    with f1:
-        pesquisa_tab = st.text_input(
-            "🔎 Filtrar inventário por produto, código ou lote:",
-            placeholder="Ex: Salmão, Pão, PROD-0001, LOTE1001...",
-        )
-    with f2:
-        filtro_validade_tab = st.selectbox(
-            "Filtrar por destino/validade:",
-            ["Todos os Lotes", "1 a 5 dias", "Sacos Surpresa", "Superior a 5 dias"],
-        )
 
     df_res = pd.DataFrame(st.session_state.resultados_simulacao)
     if st.session_state.filtro_cat_tab1:

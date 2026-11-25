@@ -420,14 +420,6 @@ def renderizar_analise_decisoes(snapshot: dict, snapshot_base: dict | None = Non
         st.info("Sem lotes para apresentar neste filtro.")
         return
 
-    tema_atual = getattr(getattr(st.context, "theme", None), "type", "dark") or "dark"
-    eh_light = tema_atual == "light"
-    cor_fundo = "#ffffff" if eh_light else "#111111"
-    cor_texto = "#111827" if eh_light else "#e5e5e5"
-    cor_eixo = "#4b5563" if eh_light else "#cbd5e1"
-    cor_grelha = "#e5e7eb" if eh_light else "#242424"
-    cor_borda = "#ffffff" if eh_light else "#111111"
-
     # 1. Quantificação global das decisões (Gráfico de Barras + Tabela Comparativa)
     contagem = df_filt["Decisão"].value_counts().reset_index()
     contagem.columns = ["Decisão", "Lotes"]
@@ -456,17 +448,16 @@ def renderizar_analise_decisoes(snapshot: dict, snapshot_base: dict | None = Non
                 legend=None,
             )
         )
-        rotulos = base_bar.mark_text(align="left", dx=6, color=cor_texto, fontWeight="bold").encode(
+        rotulos = base_bar.mark_text(align="left", dx=6, fontWeight="bold").encode(
             text=alt.Text("Lotes:Q")
         )
         grafico_bar = (
             (barras + rotulos)
             .properties(height=max(190, len(contagem) * 38))
-            .configure(background=cor_fundo)
             .configure_view(stroke=None)
-            .configure_axis(labelColor=cor_texto, titleColor=cor_eixo, gridColor=cor_grelha, labelLimit=220)
+            .configure_axis(labelLimit=220)
         )
-        st.altair_chart(grafico_bar, width="stretch")
+        st.altair_chart(grafico_bar, theme="streamlit", width="stretch")
 
     with col_tab:
         st.markdown("**📋 Resumo Quantitativo**")
@@ -482,10 +473,9 @@ def renderizar_analise_decisoes(snapshot: dict, snapshot_base: dict | None = Non
         st.dataframe(df_resumo, hide_index=True, width="stretch")
 
     # 2. Gráfico Stacked Bar (100%) por Categoria
-
     st.markdown("**📊 Distribuição das Decisões por Categoria (%)**")
     legenda_html = " &nbsp;&nbsp; ".join(
-        f'<span style="font-size:12px;color:{cor_texto};">'
+        f'<span style="font-size:12px;color:inherit;">'
         f'<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{cor};margin-right:5px;"></span>'
         f'{nome}</span>'
         for nome, cor in CORES_DECISAO.items()
@@ -521,7 +511,7 @@ def renderizar_analise_decisoes(snapshot: dict, snapshot_base: dict | None = Non
 
     barras_stack = (
         alt.Chart(df_stack)
-        .mark_bar(cornerRadius=5, width={"band": 0.62}, stroke=cor_borda, strokeWidth=1.5)
+        .mark_bar(cornerRadius=5, width={"band": 0.62}, stroke="rgba(128,128,128,0.25)", strokeWidth=1)
         .encode(
             x=alt.X(
                 "Categoria:N",
@@ -562,11 +552,9 @@ def renderizar_analise_decisoes(snapshot: dict, snapshot_base: dict | None = Non
     grafico_stack = (
         (barras_stack + rotulos_stack)
         .properties(height=400)
-        .configure(background=cor_fundo)
         .configure_view(stroke=None)
-        .configure_axis(labelColor=cor_texto, titleColor=cor_eixo, gridColor=cor_grelha)
     )
-    st.altair_chart(grafico_stack, width="stretch")
+    st.altair_chart(grafico_stack, theme="streamlit", width="stretch")
 
 
 def obter_lotes_ativos_fefo(produto_id: str, lotes_por_prod: dict[str, list[dict]]) -> list[dict]:
@@ -1029,14 +1017,14 @@ with tab1:
         tema_atual = getattr(getattr(st.context, "theme", None), "type", "dark") or "dark"
         eh_light = tema_atual == "light"
 
-        # Coluna fixa à direita, compacta (o título faz wrap em 2 linhas)
+# Coluna fixa à direita, compacta (o título faz wrap em 2 linhas)
         gb.configure_column(
             "Consultar Validação CSP",
             width=135,
             minWidth=135,
             pinned="right",
             cellStyle={
-                "color": "#0284c7" if eh_light else "#38bdf8",
+                "color": "#0ea5e9",
                 "textDecoration": "underline",
                 "cursor": "pointer",
                 "fontWeight": "600",
@@ -1044,92 +1032,49 @@ with tab1:
             onCellClicked=clicar_csp,
         )
 
-        # Paleta adaptativa: Branca & Cinza (Light) | Preta & Cinza (Dark)
-        if eh_light:
-            custom_css = {
-                ".ag-root-wrapper": {
-                    "background-color": "#ffffff !important",
-                    "border": "1px solid #d1d5db !important",
-                    "border-radius": "8px !important",
-                },
-                ".ag-header": {
-                    "background-color": "#f3f4f6 !important",
-                    "border-bottom": "1px solid #d1d5db !important",
-                },
-                ".ag-header-cell-text": {
-                    "color": "#111827 !important",
-                    "font-weight": "600 !important",
-                    "line-height": "1.2 !important",
-                },
-                ".ag-row": {
-                    "background-color": "#ffffff !important",
-                    "color": "#111827 !important",
-                    "border-bottom": "1px solid #e5e7eb !important",
-                },
-                ".ag-row-odd": {
-                    "background-color": "#f5f5f5 !important",
-                },
-                ".ag-row-hover": {
-                    "background-color": "rgba(255, 75, 75, 0.12) !important",
-                },
-                ".ag-row-selected": {
-                    "background-color": "#e5e7eb !important",
-                },
-                ".ag-cell": {
-                    "color": "#111827 !important",
-                },
-                ".ag-paging-panel": {
-                    "background-color": "#f3f4f6 !important",
-                    "color": "#374151 !important",
-                    "border-top": "1px solid #d1d5db !important",
-                },
-                ".ag-icon": {
-                    "color": "#374151 !important",
-                },
-            }
-        else:
-            custom_css = {
-                ".ag-root-wrapper": {
-                    "background-color": "#111111 !important",
-                    "border": "1px solid #2c2c2c !important",
-                    "border-radius": "8px !important",
-                },
-                ".ag-header": {
-                    "background-color": "#1c1c1c !important",
-                    "border-bottom": "1px solid #333333 !important",
-                },
-                ".ag-header-cell-text": {
-                    "color": "#e5e5e5 !important",
-                    "font-weight": "600 !important",
-                    "line-height": "1.2 !important",
-                },
-                ".ag-row": {
-                    "background-color": "#111111 !important",
-                    "color": "#f3f3f3 !important",
-                    "border-bottom": "1px solid #242424 !important",
-                },
-                ".ag-row-odd": {
-                    "background-color": "#1a1a1a !important",
-                },
-                ".ag-row-hover": {
-                    "background-color": "rgba(255, 75, 75, 0.16) !important",
-                },
-                ".ag-row-selected": {
-                    "background-color": "#2d2d2d !important",
-                },
-                ".ag-cell": {
-                    "color": "#f3f3f3 !important",
-                },
-                ".ag-paging-panel": {
-                    "background-color": "#1c1c1c !important",
-                    "color": "#d4d4d4 !important",
-                    "border-top": "1px solid #333333 !important",
-                },
-                ".ag-icon": {
-                    "color": "#d4d4d4 !important",
-                },
-            }
-
+        # Paleta adaptativa automática via variáveis CSS nativas do Streamlit (Light & Dark)
+        custom_css = {
+            ".ag-root-wrapper": {
+                "background-color": "var(--background-color) !important",
+                "border": "1px solid rgba(128, 128, 128, 0.3) !important",
+                "border-radius": "8px !important",
+            },
+            ".ag-header": {
+                "background-color": "var(--secondary-background-color) !important",
+                "border-bottom": "1px solid rgba(128, 128, 128, 0.3) !important",
+            },
+            ".ag-header-cell-text": {
+                "color": "var(--text-color) !important",
+                "font-weight": "600 !important",
+                "line-height": "1.2 !important",
+            },
+            ".ag-row": {
+                "background-color": "var(--background-color) !important",
+                "color": "var(--text-color) !important",
+                "border-bottom": "1px solid rgba(128, 128, 128, 0.18) !important",
+            },
+            ".ag-row-odd": {
+                "background-color": "color-mix(in srgb, var(--text-color) 4%, var(--background-color)) !important",
+            },
+            ".ag-row-hover": {
+                "background-color": "rgba(255, 75, 75, 0.14) !important",
+            },
+            ".ag-row-selected": {
+                "background-color": "rgba(128, 128, 128, 0.22) !important",
+            },
+            ".ag-cell": {
+                "color": "var(--text-color) !important",
+            },
+            ".ag-paging-panel": {
+                "background-color": "var(--secondary-background-color) !important",
+                "color": "var(--text-color) !important",
+                "border-top": "1px solid rgba(128, 128, 128, 0.3) !important",
+            },
+            ".ag-icon": {
+                "color": "var(--text-color) !important",
+            },
+        }
+        
         if "aggrid_key_v" not in st.session_state:
             st.session_state["aggrid_key_v"] = 0
         if "popup_lote_pendente" not in st.session_state:
@@ -1137,7 +1082,7 @@ with tab1:
 
         grid_resp = AgGrid(
             df_grid,
-            key=f"tabela_operacoes_{tema_atual}_{st.session_state['aggrid_key_v']}",
+            key=f"tabela_operacoes_{st.session_state['aggrid_key_v']}",
             gridOptions=gb.build(),
             update_on=["selectionChanged"],
             columns_auto_size_mode=ColumnsAutoSizeMode.NO_AUTOSIZE,

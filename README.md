@@ -40,7 +40,7 @@ venv\Scripts\activate
 source venv/bin/activate
 
 # 3. Instalar as dependências necessárias
-pip install langchain langgraph langchain-openai streamlit pandas pydantic streamlit-aggrid  
+pip install langchain langgraph langchain-openai streamlit pandas pydantic streamlit-aggrid scikit-learn qrcode[pil]  
 ```
 
 ---

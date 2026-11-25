@@ -28,6 +28,14 @@ def formatar_eur(valor: float) -> str:
 def sublinhar_texto(texto: str) -> str:
     return "".join(f"{c}\u0332" for c in texto)
 
+def _formatar_delta_pt(valor: float, sufixo: str = "", casas: int = 1) -> str:
+    modulo = formatar_numero_pt(abs(valor), casas)
+    if valor > 0:
+        return f"+{modulo}{sufixo}"
+    if valor < 0:
+        return f"-{modulo}{sufixo}"
+    return f"0{sufixo}"
+
 
 def formatar_stock(qtd: float, unidade: str) -> str:
     return f"{qtd:.1f} {unidade}" if unidade == "kg" else f"{int(round(qtd))} {unidade}"
@@ -443,6 +451,7 @@ def _simular_baseline_tradicional(
     total_desperdicadas = 0.0
     receita_total = 0.0
     custo_desperdicio = 0.0
+    desperdicio_por_categoria: dict[str, float] = {}
 
     for dia_cfg in plano_dias:
         fator_dia = dia_cfg["fator_dia"]
@@ -455,7 +464,6 @@ def _simular_baseline_tradicional(
                 if prod.get("categoria") in ["carne", "fruta"] and lote["quantidade_disponivel"] > 0:
                     lote["quantidade_disponivel"] = round(lote["quantidade_disponivel"] * 1.4, 1)
 
-        # Regra estática tradicional de retalho (sem agentes, sem clima, sem elasticidade)
         for lote in lotes_base:
             if lote["quantidade_disponivel"] <= 0 or lote.get("estado") == "expirado":
                 continue
@@ -475,7 +483,6 @@ def _simular_baseline_tradicional(
             lote["preco_final_atual"] = preco_f
             lote["destino_final"] = "prateleira_desconto"
 
-        # Mesma procura base do dia (mesma seed rng)
         lotes_por_prod: dict[str, list[dict]] = {}
         for l in lotes_base:
             if l["quantidade_disponivel"] > 0 and l.get("estado") != "expirado":
@@ -507,7 +514,6 @@ def _simular_baseline_tradicional(
                         qvd_kg += qtd_vendida * peso_unit
                     procura_base = max(0.0, procura_base - (qtd_vendida / (1.0 + desc_ativo * elast)))
 
-        # Fecho do dia: expirações sem alternativa logística
         for lote in lotes_base:
             if lote["quantidade_disponivel"] <= 0 or lote.get("estado") == "expirado":
                 continue
@@ -516,9 +522,11 @@ def _simular_baseline_tradicional(
                 qtd_exp = lote["quantidade_disponivel"]
                 prod = catalogo_map[lote["produto_id"]]
                 peso_unit = 1.0 if prod.get("unidade_medida") == "kg" else float(prod.get("conteudo_liquido", 0.10))
+                cat = prod.get("categoria", "outros").capitalize()
 
                 qexp_kg += qtd_exp * peso_unit
                 total_desperdicadas += qtd_exp
+                desperdicio_por_categoria[cat] = round(desperdicio_por_categoria.get(cat, 0.0) + qtd_exp, 1)
                 custo_desperdicio += qtd_exp * (prod["custo_aquisicao"] + prod["custo_descarte"])
                 lote["quantidade_disponivel"] = 0.0
                 lote["estado"] = "expirado"
@@ -536,8 +544,8 @@ def _simular_baseline_tradicional(
         "receita_total": round(receita_total, 2),
         "custo_desperdicio": round(custo_desperdicio, 2),
         "qtar_kg": round(qtar_kg, 1),
+        "desperdicio_por_categoria": desperdicio_por_categoria,
     }
-
 
 def simular_horizonte_temporal(
     dias_simulacao: int = 7,
@@ -559,7 +567,6 @@ def simular_horizonte_temporal(
     qd_kg_total = 0.0    # Quantidade Doada (kg)
     qr_kg_total = 0.0    # Quantidade Reaproveitada: cozinha interna + ração animal (kg)
     qexp_kg_total = 0.0  # Quantidade em risco que expirou sem venda (kg)
-    passos_execucao = []
     plano_dias = []
 
     rng = random.Random(2026)
@@ -783,21 +790,6 @@ def simular_horizonte_temporal(
             if l.get("estado") == "expirado" and l.get("dia_expiracao_sim") == dia_idx + 1
         ]
 
-        passos_execucao.append({
-            "dia_num": dia_idx + 1,
-            "data_str": data_corrente.strftime("%d/%m/%Y"),
-            "cenario": ", ".join(perturbs_dia) if perturbs_dia else "Operação Normal",
-            "clima": meteo["descricao"],
-            "fator_procura": round(fator_dia, 2),
-            "lotes_analisados_agentes": len(tarefas),
-            "sacos_criados": len(sacos_dia),
-            "vendidas": round(vendidas_dia, 1),
-            "doadas": round(doadas_dia, 1),
-            "desperdicadas": round(desperdicadas_dia, 1),
-            "receita": round(receita_dia, 2),
-            "exemplos_expirados": lotes_expirados_nomes[:4],
-        })
-
     total_movimentado = max(1.0, total_un_vendidas + total_un_doadas_cozinha + total_un_desperdicadas)
     taxa_desperdicio_pct = (total_un_desperdicadas / total_movimentado) * 100
 
@@ -821,124 +813,5 @@ def simular_horizonte_temporal(
         "ts_pct": round(ts_pct, 2),
         "evolucao_diaria": evolucao_diaria,
         "desperdicio_por_categoria": desperdicio_por_categoria,
-        "passos_execucao": passos_execucao,
         "comparacao_baseline": baseline,
-    }
-
-def _simular_baseline_tradicional(
-    catalogo_base: list[dict],
-    lotes_iniciais: list[dict],
-    plano_dias: list[dict],
-) -> dict:
-    """
-    Simula a abordagem tradicional do retalho alimentar (etiqueta fixa):
-    - Só aplica desconto a <= 2 dias da validade (30% a 2 dias, 50% a 1 dia);
-    - Não usa elasticidade-preço, RAG, CSP, Sacos Surpresa nem encaminhamento para cozinha/ração;
-    - Corre sobre o mesmo inventário inicial e exatos mesmos fatores aleatórios diários.
-    """
-    import copy
-
-    rng = random.Random(2026)
-    catalogo_map = {p["produto_id"]: p for p in catalogo_base}
-    lotes_base = copy.deepcopy(lotes_iniciais)
-
-    qvd_kg = 0.0
-    qexp_kg = 0.0
-    total_vendidas = 0.0
-    total_desperdicadas = 0.0
-    receita_total = 0.0
-    custo_desperdicio = 0.0
-
-    for dia_cfg in plano_dias:
-        fator_dia = dia_cfg["fator_dia"]
-        pico_stock = dia_cfg["pico_stock"]
-        feriado_amanha = dia_cfg["feriado_amanha"]
-
-        if pico_stock:
-            for lote in lotes_base:
-                prod = catalogo_map.get(lote["produto_id"], {})
-                if prod.get("categoria") in ["carne", "fruta"] and lote["quantidade_disponivel"] > 0:
-                    lote["quantidade_disponivel"] = round(lote["quantidade_disponivel"] * 1.4, 1)
-
-        # Regra estática tradicional de retalho (sem agentes, sem clima, sem elasticidade)
-        for lote in lotes_base:
-            if lote["quantidade_disponivel"] <= 0 or lote.get("estado") == "expirado":
-                continue
-            prod = catalogo_map[lote["produto_id"]]
-            if feriado_amanha and lote["dias_para_expirar"] <= 2:
-                lote["dias_para_expirar"] = 1
-
-            dias = lote["dias_para_expirar"]
-            if dias == 2:
-                lote["desconto_validade"] = 0.30
-            elif dias == 1:
-                lote["desconto_validade"] = 0.50
-            else:
-                lote["desconto_validade"] = 0.0
-
-            _, preco_f = calcular_preco_efetivo_lote(lote, prod)
-            lote["preco_final_atual"] = preco_f
-            lote["destino_final"] = "prateleira_desconto"
-
-        # Mesma procura base do dia (mesma seed rng)
-        lotes_por_prod: dict[str, list[dict]] = {}
-        for l in lotes_base:
-            if l["quantidade_disponivel"] > 0 and l.get("estado") != "expirado":
-                lotes_por_prod.setdefault(l["produto_id"], []).append(l)
-
-        for prod_id, _ in lotes_por_prod.items():
-            prod = catalogo_map[prod_id]
-            peso_unit = 1.0 if prod.get("unidade_medida") == "kg" else float(prod.get("conteudo_liquido", 0.10))
-            elegiveis = obter_lotes_ativos_fefo(prod_id, lotes_por_prod)
-            if not elegiveis:
-                continue
-
-            procura_base = prod.get("vendas_medias_diarias", 2.0) * fator_dia * rng.uniform(0.85, 1.15)
-            for lote in elegiveis:
-                if procura_base <= 0:
-                    break
-                desc_ativo = max(lote.get("desconto_validade", 0.0), prod.get("desconto_campanha", 0.0))
-                elast = prod.get("elasticidade_preco", 1.2)
-                procura_lote = procura_base * (1.0 + desc_ativo * elast)
-                qtd_vendida = min(lote["quantidade_disponivel"], procura_lote)
-                if prod.get("unidade_medida") != "kg":
-                    qtd_vendida = float(int(round(qtd_vendida)))
-
-                if qtd_vendida > 0:
-                    lote["quantidade_disponivel"] = round(lote["quantidade_disponivel"] - qtd_vendida, 2)
-                    receita_total += qtd_vendida * lote.get("preco_final_atual", prod["pvp"])
-                    total_vendidas += qtd_vendida
-                    if lote.get("desconto_validade", 0.0) > 0:
-                        qvd_kg += qtd_vendida * peso_unit
-                    procura_base = max(0.0, procura_base - (qtd_vendida / (1.0 + desc_ativo * elast)))
-
-        # Fecho do dia: expirações sem alternativa logística
-        for lote in lotes_base:
-            if lote["quantidade_disponivel"] <= 0 or lote.get("estado") == "expirado":
-                continue
-            lote["dias_para_expirar"] -= 1
-            if lote["dias_para_expirar"] <= 0:
-                qtd_exp = lote["quantidade_disponivel"]
-                prod = catalogo_map[lote["produto_id"]]
-                peso_unit = 1.0 if prod.get("unidade_medida") == "kg" else float(prod.get("conteudo_liquido", 0.10))
-
-                qexp_kg += qtd_exp * peso_unit
-                total_desperdicadas += qtd_exp
-                custo_desperdicio += qtd_exp * (prod["custo_aquisicao"] + prod["custo_descarte"])
-                lote["quantidade_disponivel"] = 0.0
-                lote["estado"] = "expirado"
-
-    total_mov = max(1.0, total_vendidas + total_desperdicadas)
-    qtar_kg = qvd_kg + qexp_kg
-    ts_pct = (qvd_kg / max(0.01, qtar_kg)) * 100
-
-    return {
-        "ts_pct": round(ts_pct, 2),
-        "taxa_desperdicio_pct": round((total_desperdicadas / total_mov) * 100, 2),
-        "total_vendidas": round(total_vendidas, 1),
-        "total_doadas_cozinha": 0.0,
-        "total_desperdicadas": round(total_desperdicadas, 1),
-        "receita_total": round(receita_total, 2),
-        "custo_desperdicio": round(custo_desperdicio, 2),
-        "qtar_kg": round(qtar_kg, 1),
     }

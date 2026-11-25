@@ -1,9 +1,10 @@
 import pandas as pd
 from st_aggrid import AgGrid, ColumnsAutoSizeMode, GridOptionsBuilder, JsCode
 import streamlit as st
+import altair as alt
 
 from src.rag.retriever import RecuperadorRAG
-from src.simulation.orchestrator import formatar_eur, formatar_numero_pt, simular_horizonte_temporal
+from src.simulation.orchestrator import formatar_eur, formatar_numero_pt, _formatar_delta_pt, simular_horizonte_temporal
 from src.ui.components import (
     mostrar_popup_agentes,
     renderizar_analise_decisoes,
@@ -296,70 +297,56 @@ def renderizar_resultados_multidia() -> None:
         f"⏩ Resultados da Simulação Acelerada Multi-Dia ({res['dias_simulados']} dias)",
         expanded=True,
     ):
-        # 1. Passo a passo cronológico da simulação antes das métricas
-        st.markdown("### 🧭 Passo a Passo da Execução Multi-Dia")
-        for p in res.get("passos_execucao", []):
-            exp_txt = (
-                f" — *Expirados:* {', '.join(p['exemplos_expirados'])}"
-                if p["exemplos_expirados"]
-                else " — *Zero desperdício neste dia*"
-            )
-            st.markdown(
-                f"**Passo {p['dia_num']} (`{p['data_str']}`)** | 🌦️ `{p['clima']}` | ⚡ `{p['cenario']}` *(Procura: {int(p['fator_procura'] * 100)}%)*\n"
-                f"1. **Agentes + CSP:** Avaliaram **{formatar_numero_pt(p['lotes_analisados_agentes'], 0)}** lotes críticos (≤ 5 dias) e montaram **{p['sacos_criados']}** Sacos Surpresa.\n"
-                f"2. **Vendas FEFO & Logística:** Escoadas **{formatar_numero_pt(p['vendidas'], 0)}** un/kg em loja (`{formatar_numero_pt(p['receita'], 2)}€`) e **{formatar_numero_pt(p['doadas'], 0)}** un/kg encaminhadas para Doação/Cozinha.\n"
-                f"3. **Fecho de Validades:** **{formatar_numero_pt(p['desperdicadas'], 0)}** un/kg expiraram sem compra{exp_txt}."
-            )
+        if res.get("passos_execucao"):
+            st.markdown("### 🧭 Passo a Passo da Execução Multi-Dia")
+            for p in res.get("passos_execucao", []):
+                exp_txt = (
+                    f" — *Expirados:* {', '.join(p['exemplos_expirados'])}"
+                    if p["exemplos_expirados"]
+                    else " — *Zero desperdício neste dia*"
+                )
+                st.markdown(
+                    f"**Passo {p['dia_num']} (`{p['data_str']}`)** | 🌦️ `{p['clima']}` | ⚡ `{p['cenario']}` *(Procura: {int(p['fator_procura'] * 100)}%)*\n"
+                    f"1. **Agentes + CSP:** Avaliaram **{formatar_numero_pt(p['lotes_analisados_agentes'], 0)}** lotes críticos (≤ 5 dias) e montaram **{p['sacos_criados']}** Sacos Surpresa.\n"
+                    f"2. **Vendas FEFO & Logística:** Escoadas **{formatar_numero_pt(p['vendidas'], 0)}** un/kg em loja (`{formatar_numero_pt(p['receita'], 2)}€`) e **{formatar_numero_pt(p['doadas'], 0)}** un/kg encaminhadas para Doação/Cozinha.\n"
+                    f"3. **Fecho de Validades:** **{formatar_numero_pt(p['desperdicadas'], 0)}** un/kg expiraram sem compra{exp_txt}."
+                )
+            st.divider()
 
-        st.divider()
-
-        # 2. Métricas consolidadas incluindo Taxa de Salvamento (TS)
-        st.markdown("### 📊 Resultados Consolidados do Horizonte")
+        # 1. Métricas do horizonte SEM setas (apenas contexto descritivo)
+        st.markdown("### 📊 Visualização do Horizonte")
         ts_val = res.get("ts_pct", 0.0)
         atingiu_meta = ts_val > 90.0
         estado_meta = "✅ Meta atingida (> 90%)" if atingiu_meta else "⚠️ Abaixo da meta (≤ 90%)"
 
         m1, m2, m3, m4, m5 = st.columns(5)
-        m1.metric(
-            "Taxa de Salvamento (TS)",
-            f"{formatar_numero_pt(ts_val, 1)}%",
-            estado_meta,
-            delta_color="normal" if atingiu_meta else "inverse",
-        )
-        m2.metric(
-            "Unidades / Kg Vendidos",
-            formatar_numero_pt(res["total_vendidas"], 0),
-            f"Receita: {formatar_numero_pt(res['receita_total'], 2)}€",
-            delta_color="off",
-        )
-        m3.metric(
-            "Doação / Cozinha Interna",
-            formatar_numero_pt(res["total_doadas_cozinha"], 0),
-            f"QD: {formatar_numero_pt(res.get('qd_kg', 0.0), 1)} kg | QR: {formatar_numero_pt(res.get('qr_kg', 0.0), 1)} kg",
-            delta_color="off",
-        )
-        m4.metric(
-            "Desperdiçado (Expirado)",
-            formatar_numero_pt(res["total_desperdicadas"], 0),
-            f"Custo: {formatar_numero_pt(res['custo_desperdicio'], 2)}€",
-            delta_color="off",
-        )
-        m5.metric(
-            "Taxa de Desperdício",
-            f"{formatar_numero_pt(res['taxa_desperdicio_pct'], 1)}%",
-            f"Em {res['dias_simulados']} dias",
-            delta_color="off",
-        )
+        with m1:
+            st.metric("Taxa de Salvamento (TS)", f"{formatar_numero_pt(ts_val, 1)}%")
+            st.caption(estado_meta)
+        with m2:
+            st.metric("Total Vendido (Unid. / Kg)", formatar_numero_pt(res["total_vendidas"], 0))
+            st.caption(f"Faturação bruta: {formatar_numero_pt(res['receita_total'], 2)}€")
+        with m3:
+            st.metric("Escoado p/ Doação / Reaproveit.", formatar_numero_pt(res["total_doadas_cozinha"], 0))
+            st.caption(
+                f"Doado (QD): {formatar_numero_pt(res.get('qd_kg', 0.0), 1)} kg · "
+                f"Cozinha/Ração (QR): {formatar_numero_pt(res.get('qr_kg', 0.0), 1)} kg"
+            )
+        with m4:
+            st.metric("Desperdício Final (Expirados)", formatar_numero_pt(res["total_desperdicadas"], 0))
+            st.caption(f"Custo perda (compra+lixo): {formatar_numero_pt(res['custo_desperdicio'], 2)}€")
+        with m5:
+            st.metric("Taxa de Desperdício", f"{formatar_numero_pt(res['taxa_desperdicio_pct'], 1)}%")
+            st.caption(f"Expirado / total ({res['dias_simulados']} dias)")
 
         st.caption(
-            f"📐 **Decomposição TS (em massa):** "
-            f"QVD = `{formatar_numero_pt(res.get('qvd_kg', 0.0), 1)} kg` · "
-            f"QD = `{formatar_numero_pt(res.get('qd_kg', 0.0), 1)} kg` · "
-            f"QR = `{formatar_numero_pt(res.get('qr_kg', 0.0), 1)} kg` · "
-            f"QTAR = `{formatar_numero_pt(res.get('qtar_kg', 0.0), 1)} kg`"
+            f"📐 **Fórmula TS = ((QVD + QD + QR) / QTAR) × 100:** "
+            f"**QVD** (Vendidos c/ desconto) = `{formatar_numero_pt(res.get('qvd_kg', 0.0), 1)} kg` · "
+            f"**QD** (Doados a instituições) = `{formatar_numero_pt(res.get('qd_kg', 0.0), 1)} kg` · "
+            f"**QR** (Reaproveitados em cozinha/ração) = `{formatar_numero_pt(res.get('qr_kg', 0.0), 1)} kg` · "
+            f"**QTAR** (Total de alimentos em risco) = `{formatar_numero_pt(res.get('qtar_kg', 0.0), 1)} kg`"
         )
 
-        # 3. Tabela diária com números formatados no padrão PT
         df_evo = pd.DataFrame(res["evolucao_diaria"]).copy()
         for col_num, casas in [
             ("Vendidas", 1),
@@ -372,42 +359,46 @@ def renderizar_resultados_multidia() -> None:
 
         st.dataframe(df_evo, hide_index=True, width="stretch")
 
-        # 4. Comparação Direta: Desperdíci0% vs. Modelo Tradicional (Descontos Fixos 30% / 50%)
+        # 2. Comparação Direta: Desperdíci0% vs. Modelo Tradicional
         base = res.get("comparacao_baseline")
         if base:
             st.divider()
             st.markdown("### ⚖️ Impacto Real: Desperdíci0% vs. Modelo Tradicional (Descontos Fixos 30% / 50%)")
             st.caption(
-                "Comparação direta sobre os mesmos 200 produtos, 500 lotes iniciais e perturbações diárias, "
-                "face a uma política tradicional de etiqueta fixa (30% a 2 dias, 50% no último dia, sem IA/CSP nem escoamento alternativo)."
+                "Mesmos 200 produtos, 500 lotes iniciais e perturbações diárias. "
+                "O modelo tradicional aplica apenas 30% a 2 dias e 50% a 1 dia, sem IA/CSP, Sacos Surpresa nem encaminhamento."
             )
 
             ganho_ts = res["ts_pct"] - base["ts_pct"]
             reducao_desp_un = base["total_desperdicadas"] - res["total_desperdicadas"]
             reducao_desp_pct = (reducao_desp_un / max(1.0, base["total_desperdicadas"])) * 100
             poupanca_custo = base["custo_desperdicio"] - res["custo_desperdicio"]
-            ganho_receita = res["receita_total"] - base["receita_total"]
+            dif_receita = res["receita_total"] - base["receita_total"]
 
             k1, k2, k3, k4 = st.columns(4)
             k1.metric(
-                "Ganho na Taxa Salvamento (TS)",
-                f"+{formatar_numero_pt(ganho_ts, 1)} p.p.",
-                f"De {formatar_numero_pt(base['ts_pct'], 1)}% → {formatar_numero_pt(res['ts_pct'], 1)}%",
+                "Ganho Taxa de Salvamento (TS)",
+                _formatar_delta_pt(ganho_ts, " p.p.", 1),
+                delta=f"Tradicional: {formatar_numero_pt(base['ts_pct'], 1)}% → Desperdíci0%: {formatar_numero_pt(res['ts_pct'], 1)}%",
+                delta_color="normal" if ganho_ts >= 0 else "inverse",
             )
             k2.metric(
-                "Redução de Desperdício",
-                f"-{formatar_numero_pt(reducao_desp_pct, 1)}%",
-                f"-{formatar_numero_pt(reducao_desp_un, 0)} un/kg salvos do lixo",
+                "Desperdício Evitado (vs. Tradicional)",
+                f"{formatar_numero_pt(reducao_desp_un, 0)} un/kg",
+                delta=f"+{formatar_numero_pt(reducao_desp_un, 0)} salvos (-{formatar_numero_pt(reducao_desp_pct, 1)}% vs. {formatar_numero_pt(base['total_desperdicadas'], 0)})",
+                delta_color="normal",
             )
             k3.metric(
-                "Poupança em Perdas/Descarte",
+                "Custo de Perdas Evitado",
                 f"{formatar_numero_pt(poupanca_custo, 2)}€",
-                f"Custo caiu de {formatar_numero_pt(base['custo_desperdicio'], 2)}€",
+                delta=f"-{formatar_numero_pt(poupanca_custo, 2)}€ de custo ({formatar_numero_pt(base['custo_desperdicio'], 2)}€ → {formatar_numero_pt(res['custo_desperdicio'], 2)}€)",
+                delta_color="inverse",
             )
             k4.metric(
-                "Receita Extra Recuperada",
-                f"+{formatar_numero_pt(ganho_receita, 2)}€",
-                f"Total: {formatar_numero_pt(res['receita_total'], 2)}€",
+                "Variação de Receita (vs. Tradicional)",
+                _formatar_delta_pt(dif_receita, "€", 2),
+                delta=_formatar_delta_pt(dif_receita, "€ vs. Tradicional", 2),
+                delta_color="normal",
             )
 
             df_comp = pd.DataFrame([
@@ -415,55 +406,104 @@ def renderizar_resultados_multidia() -> None:
                     "Indicador": "Taxa de Salvamento (TS)",
                     "Retalho Tradicional (Fixo 30%/50%)": f"{formatar_numero_pt(base['ts_pct'], 1)}%",
                     "Desperdíci0% (Multi-Agente + CSP)": f"{formatar_numero_pt(res['ts_pct'], 1)}%",
-                    "Diferença Real": f"{ganho_ts:+.1f} p.p.".replace(".", ","),
+                    "Diferença Real": _formatar_delta_pt(ganho_ts, " p.p.", 1),
                 },
                 {
                     "Indicador": "Taxa de Desperdício Global",
                     "Retalho Tradicional (Fixo 30%/50%)": f"{formatar_numero_pt(base['taxa_desperdicio_pct'], 1)}%",
                     "Desperdíci0% (Multi-Agente + CSP)": f"{formatar_numero_pt(res['taxa_desperdicio_pct'], 1)}%",
-                    "Diferença Real": f"{(res['taxa_desperdicio_pct'] - base['taxa_desperdicio_pct']):+.1f} p.p.".replace(".", ","),
+                    "Diferença Real": _formatar_delta_pt(res["taxa_desperdicio_pct"] - base["taxa_desperdicio_pct"], " p.p.", 1),
                 },
                 {
                     "Indicador": "Alimentos Desperdiçados (Expirados)",
                     "Retalho Tradicional (Fixo 30%/50%)": f"{formatar_numero_pt(base['total_desperdicadas'], 0)} un/kg",
                     "Desperdíci0% (Multi-Agente + CSP)": f"{formatar_numero_pt(res['total_desperdicadas'], 0)} un/kg",
-                    "Diferença Real": f"-{formatar_numero_pt(reducao_desp_un, 0)} un/kg (-{formatar_numero_pt(reducao_desp_pct, 1)}%)",
+                    "Diferença Real": f"{_formatar_delta_pt(-reducao_desp_un, ' un/kg', 0)} (-{formatar_numero_pt(reducao_desp_pct, 1)}%)",
                 },
                 {
                     "Indicador": "Encaminhado (Doação / Cozinha / Ração)",
                     "Retalho Tradicional (Fixo 30%/50%)": "0 un/kg",
                     "Desperdíci0% (Multi-Agente + CSP)": f"{formatar_numero_pt(res['total_doadas_cozinha'], 0)} un/kg",
-                    "Diferença Real": f"+{formatar_numero_pt(res['total_doadas_cozinha'], 0)} un/kg",
+                    "Diferença Real": _formatar_delta_pt(res["total_doadas_cozinha"], " un/kg", 0),
                 },
                 {
                     "Indicador": "Custo Direto de Desperdício (Aquisição + Descarte)",
                     "Retalho Tradicional (Fixo 30%/50%)": f"{formatar_numero_pt(base['custo_desperdicio'], 2)}€",
                     "Desperdíci0% (Multi-Agente + CSP)": f"{formatar_numero_pt(res['custo_desperdicio'], 2)}€",
-                    "Diferença Real": f"-{formatar_numero_pt(poupanca_custo, 2)}€",
+                    "Diferença Real": _formatar_delta_pt(-poupanca_custo, "€", 2),
                 },
                 {
                     "Indicador": "Receita Total de Vendas",
                     "Retalho Tradicional (Fixo 30%/50%)": f"{formatar_numero_pt(base['receita_total'], 2)}€",
                     "Desperdíci0% (Multi-Agente + CSP)": f"{formatar_numero_pt(res['receita_total'], 2)}€",
-                    "Diferença Real": f"{ganho_receita:+.2f}€".replace(".", ","),
+                    "Diferença Real": _formatar_delta_pt(dif_receita, "€", 2),
                 },
             ])
             st.dataframe(df_comp, hide_index=True, width="stretch")
 
-        # 5. Gráfico de desperdício por categoria
-        if res["desperdicio_por_categoria"]:
-            st.markdown("**Desperdício acumulado por categoria (unidades/kg expirados):**")
-            df_cat_desp = pd.DataFrame(
-                [
-                    {"Categoria": k, "Desperdiçado": v}
-                    for k, v in sorted(res["desperdicio_por_categoria"].items(), key=lambda x: -x[1])
-                ]
+        # 3. Gráfico comparativo por categoria (duas barras lado a lado)
+        desp_nosso = res.get("desperdicio_por_categoria") or {}
+        desp_trad = (res.get("comparacao_baseline") or {}).get("desperdicio_por_categoria") or {}
+        todas_cats = sorted(set(desp_nosso.keys()) | set(desp_trad.keys()))
+        if todas_cats:
+            st.markdown(
+                "**Desperdício acumulado por categoria — Tradicional vs. Desperdíci0% (unidades/kg expirados):**")
+            ordem_cats = sorted(
+                todas_cats,
+                key=lambda c: max(float(desp_trad.get(c, 0.0)), float(desp_nosso.get(c, 0.0))),
+                reverse=True,
             )
-            st.bar_chart(df_cat_desp.set_index("Categoria"))
+            dados_grafico = []
+            for cat in ordem_cats:
+                dados_grafico.append({
+                    "Categoria": cat,
+                    "Modelo": "Retalho Tradicional (30%/50%)",
+                    "Desperdício": float(desp_trad.get(cat, 0.0)),
+                })
+                dados_grafico.append({
+                    "Categoria": cat,
+                    "Modelo": "Desperdíci0% (Multi-Agente + CSP)",
+                    "Desperdício": float(desp_nosso.get(cat, 0.0)),
+                })
+
+            df_graf = pd.DataFrame(dados_grafico)
+            grafico = (
+                alt.Chart(df_graf)
+                .mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
+                .encode(
+                    x=alt.X(
+                        "Categoria:N",
+                        sort=ordem_cats,
+                        axis=alt.Axis(labelAngle=-25, labelLimit=120, title=None),
+                    ),
+                    xOffset=alt.XOffset("Modelo:N"),
+                    y=alt.Y("Desperdício:Q", axis=alt.Axis(title="Unidades / Kg expirados")),
+                    color=alt.Color(
+                        "Modelo:N",
+                        scale=alt.Scale(
+                            domain=["Retalho Tradicional (30%/50%)", "Desperdíci0% (Multi-Agente + CSP)"],
+                            range=["#64748b", "#0ea5e9"],
+                        ),
+                        legend=alt.Legend(title="Modelo de Gestão", orient="bottom"),
+                    ),
+                    tooltip=[
+                        alt.Tooltip("Categoria:N", title="Categoria"),
+                        alt.Tooltip("Modelo:N", title="Modelo"),
+                        alt.Tooltip("Desperdício:Q", title="Expirado (un/kg)", format=".1f"),
+                    ],
+                )
+                .properties(height=340)
+            )
+            st.altair_chart(grafico, use_container_width=True)
 
 def renderizar_simulador_multidia_sidebar() -> None:
     with st.sidebar.expander("⏩ Simulação Acelerada Multi-Dia", expanded=False):
-        n_dias = st.selectbox("Horizonte (dias):", [5, 7, 10, 14], index=1, key="multidia_n_dias")
+        n_dias = st.selectbox(
+            "Horizonte (dias):",
+            [2, 5, 7, 10],
+            index=1,
+            key="multidia_n_dias",
+        )
         misturar_pert = st.checkbox(
             "Injetar perturbações e clima variados",
             value=True,
@@ -472,10 +512,11 @@ def renderizar_simulador_multidia_sidebar() -> None:
         correr_btn = st.button("🚀 Correr Simulação Multi-Dia", type="primary", width="stretch")
 
         if correr_btn:
-            with st.spinner(f"A simular {n_dias} dias..."):
+            dias_escolhidos = int(n_dias)
+            with st.spinner(f"A simular {dias_escolhidos} dias..."):
                 modo_meteo = st.session_state.get("modo_meteo_ativo", "Automático (Tempo Real - Coimbra)")
                 st.session_state["resultado_multidia"] = simular_horizonte_temporal(
-                    dias_simulacao=n_dias,
+                    dias_simulacao=dias_escolhidos,
                     modo_meteo=modo_meteo,
                     combinar_perturbacoes_aleatorias=misturar_pert,
                 )

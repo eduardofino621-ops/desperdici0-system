@@ -930,13 +930,53 @@ with tab1:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
+    if "filtro_cat_tab1" not in st.session_state:
+        st.session_state.filtro_cat_tab1 = None
+
+    categorias_tab1 = [
+        ("bebidas", "🧃 Bebidas"),
+        ("carne", "🥩 Carne"),
+        ("charcutaria", "🥓 Charcutaria"),
+        ("fruta", "🍎 Fruta"),
+        ("laticinios", "🥛 Laticínios"),
+        ("mercearia", "🛒 Mercearia"),
+        ("padaria", "🥖 Padaria"),
+        ("pescado", "🐟 Pescado"),
+        
+    ]
+    for linha_cats in (categorias_tab1[:4], categorias_tab1[4:]):
+        cols_cat = st.columns(4)
+        for col_c, (cat_key, cat_label) in zip(cols_cat, linha_cats):
+            with col_c:
+                ativa = st.session_state.filtro_cat_tab1 == cat_key
+                if st.button(
+                    cat_label,
+                    key=f"btn_tab1_cat_{cat_key}",
+                    type="primary" if ativa else "secondary",
+                    width="stretch",
+                ):
+                    st.session_state.filtro_cat_tab1 = None if ativa else cat_key
+                    st.rerun()
+
     f1, f2 = st.columns([2, 1])
     with f1:
-        pesquisa_tab = st.text_input("🔎 Filtrar inventário por produto, código ou lote:", placeholder="Ex: Salmão, Pão, PROD-0001, LOTE1001...")
+        pesquisa_tab = st.text_input(
+            "🔎 Filtrar inventário por produto, código ou lote:",
+            placeholder="Ex: Salmão, Pão, PROD-0001, LOTE1001...",
+        )
     with f2:
-        filtro_validade_tab = st.selectbox("Filtrar por destino/validade:", ["Todos os Lotes", "1 a 5 dias", "Sacos Surpresa", "Superior a 5 dias"])
+        filtro_validade_tab = st.selectbox(
+            "Filtrar por destino/validade:",
+            ["Todos os Lotes", "1 a 5 dias", "Sacos Surpresa", "Superior a 5 dias"],
+        )
 
     df_res = pd.DataFrame(st.session_state.resultados_simulacao)
+    if st.session_state.filtro_cat_tab1:
+        df_res = df_res[df_res["Categoria"].str.lower() == st.session_state.filtro_cat_tab1]
+
+    if st.session_state.filtro_cat_tab1:
+        df_res = df_res[df_res["Categoria"].str.lower() == st.session_state.filtro_cat_tab1]
+
     if pesquisa_tab:
         mask = (
             df_res["Produto"].str.contains(pesquisa_tab, case=False, na=False)
@@ -1180,9 +1220,9 @@ with tab2:
         ("charcutaria", "🥓 Charcutaria"),
         ("fruta", "🍎 Fruta"),
         ("laticinios", "🥛 Laticínios"),
+        ("mercearia", "🛒 Mercearia")
         ("padaria", "🥖 Padaria"),
         ("pescado", "🐟 Pescado"),
-        ("mercearia", "🛒 Mercearia")
         
     ]
     for linha_cats in (categorias_botoes[:4], categorias_botoes[4:]):

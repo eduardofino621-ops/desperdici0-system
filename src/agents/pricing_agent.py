@@ -76,8 +76,9 @@ def agente_dynamic_pricing(state: dict) -> dict:
             )
         }
 
+    # Escada progressiva FEFO em operação normal quando existe excesso previsto (ou alocação a Sacos Surpresa)
     piso_progressivo = desconto_campanha
-    if excesso_estimado > 0 and destino_proposto in ["prateleira_desconto", "sacos_surpresa"]:
+    if (excesso_estimado > 0 or destino_proposto == "sacos_surpresa") and destino_proposto in ["prateleira_desconto", "sacos_surpresa"]:
         if dias <= 1:
             piso_progressivo = min(0.65, max(desconto_campanha + 0.25, 0.45))
         elif dias == 2:

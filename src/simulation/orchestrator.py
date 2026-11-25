@@ -263,10 +263,11 @@ def correr_simulacao(cenario_perturbacao: str, perturbacoes_ativas: list[str]) -
                     round(nova_qtd, 1) if prod.get("unidade_medida") == "kg" else int(round(nova_qtd))
                 )
 
+    dias_alvo_sacos = 2 if fecho_loja_2h else 1
     stock_total_padaria_urgente = sum(
         l["quantidade_disponivel"] * catalogo_map.get(l["produto_id"], {}).get("conteudo_liquido", 0.10)
         for l in lotes_copia
-        if l["dias_para_expirar"] <= 1
+        if l["dias_para_expirar"] == dias_alvo_sacos
         and l["quantidade_disponivel"] > 0
         and catalogo_map.get(l["produto_id"], {}).get("categoria") == "padaria"
     )

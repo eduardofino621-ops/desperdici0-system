@@ -1,0 +1,266 @@
+import base64
+from datetime import datetime
+import io
+from urllib.parse import quote
+
+import streamlit as st
+
+try:
+    import qrcode
+    HAS_QRCODE = True
+except ImportError:
+    HAS_QRCODE = False
+
+CATEGORIAS_UI = [
+    ("bebidas", "🧃 Bebidas"),
+    ("carne", "🥩 Carne"),
+    ("charcutaria", "🥓 Charcutaria"),
+    ("fruta", "🍎 Fruta"),
+    ("laticinios", "🥛 Laticínios"),
+    ("mercearia", "🛒 Mercearia"),
+    ("padaria", "🥖 Padaria"),
+    ("pescado", "🐟 Pescado"),
+]
+
+CORES_DECISAO = {
+    "Prateleira (Normal/Campanha)": "#52606D",
+    "Desc. Validade (ESL)": "#1E6F8C",
+    "Sacos Surpresa": "#C88A2E",
+    "Cozinha Interna": "#8B3A7B",
+    "Doação (Caridade)": "#3E8E41",
+    "Doação (Ração Animal)": "#CC6633",
+    "Descarte Obrigatório": "#B8433E",
+}
+
+
+def injetar_css_global() -> None:
+    st.markdown("""
+    <style>
+        .kpi-card {
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+        }
+        .kpi-title {
+            font-size: 12px;
+            color: #64748b;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            margin-bottom: 4px;
+        }
+        .kpi-value {
+            font-size: 26px;
+            color: #0f172a;
+            font-weight: 800;
+        }
+        .kpi-sub {
+            font-size: 11px;
+            color: #64748b;
+            margin-top: 2px;
+        }
+        .esl-bezel {
+            background: #1e293b;
+            padding: 7px;
+            border-radius: 10px;
+            box-shadow: 0 6px 16px rgba(15, 23, 42, 0.14);
+            max-width: 360px;
+            margin: 0 auto 8px auto;
+        }
+        .esl-screen {
+            background: #e5e7eb;
+            border-radius: 5px;
+            padding: 11px 12px;
+            color: #0f172a;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            min-height: 190px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            border: 1px solid #cbd5e1;
+        }
+        .esl-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            border-bottom: 1.5px solid #cbd5e1;
+            padding-bottom: 5px;
+            margin-bottom: 6px;
+        }
+        .esl-prod-name {
+            font-size: 15.5px;
+            font-weight: 800;
+            color: #090d16;
+            line-height: 1.15;
+            margin: 0;
+        }
+        .esl-gtin {
+            font-size: 9.5px;
+            font-weight: 600;
+            color: #475569;
+            font-family: 'JetBrains Mono', monospace;
+            margin-left: 6px;
+            white-space: nowrap;
+        }
+        .esl-middle {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 6px;
+            min-height: 36px;
+        }
+        .esl-pum {
+            font-size: 10px;
+            font-weight: 700;
+            color: #334155;
+            text-transform: uppercase;
+        }
+        .esl-pvp-clean {
+            font-size: 14px;
+            font-weight: 700;
+            color: #1e293b;
+        }
+        .esl-strike-wrap {
+            position: relative;
+            display: inline-block;
+            font-size: 13.5px;
+            font-weight: 700;
+            color: #334155;
+        }
+        .esl-strike-wrap::after {
+            content: "";
+            position: absolute;
+            left: -2px;
+            right: -2px;
+            top: 50%;
+            border-top: 2px solid #dc2626;
+            transform: rotate(-10deg);
+        }
+        .esl-folheto-box {
+            text-align: right;
+        }
+        .esl-folheto-pct {
+            font-size: 15px;
+            font-weight: 800;
+            color: #0f172a;
+        }
+        .esl-folheto-price {
+            font-size: 16px;
+            font-weight: 800;
+            color: #0f172a;
+        }
+        .esl-folheto-dates {
+            font-size: 9px;
+            font-weight: 600;
+            color: #475569;
+            margin-top: 1px;
+        }
+        .esl-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            padding-top: 2px;
+        }
+        .esl-qr {
+            width: 44px;
+            height: 44px;
+            background: #ffffff;
+            padding: 2px;
+            border-radius: 3px;
+            border: 1px solid #94a3b8;
+            flex-shrink: 0;
+        }
+        .esl-promo-group {
+            margin-left: auto;
+            display: flex;
+            align-items: flex-end;
+            gap: 7px;
+        }
+        .esl-discount-badge {
+            font-size: 28px;
+            font-weight: 900;
+            color: #0369a1;
+            line-height: 0.95;
+            letter-spacing: -0.8px;
+        }
+        .esl-price-right {
+            text-align: right;
+        }
+        .esl-big-price {
+            font-size: 26px;
+            font-weight: 900;
+            color: #090d16;
+            line-height: 1;
+        }
+        .esl-folheto-main-price {
+            font-size: 22px;
+            font-weight: 800;
+            color: #090d16;
+            line-height: 1;
+        }
+        .esl-unit-tag {
+            font-size: 11px;
+            font-weight: 800;
+            color: #1e293b;
+            text-transform: uppercase;
+        }
+        .esl-validade-bar {
+            margin-top: 6px;
+            padding-top: 4px;
+            border-top: 1px dashed #94a3b8;
+            text-align: right;
+            font-size: 10.5px;
+            font-weight: 700;
+            color: #0369a1;
+        }
+        .esl-extra-lotes {
+            margin-top: 5px;
+            padding: 4px 6px;
+            background: #dbeafe;
+            border-radius: 4px;
+            border-left: 3px solid #0369a1;
+            font-size: 10px;
+            color: #0f172a;
+        }
+        .esl-extra-lote-row {
+            display: flex;
+            justify-content: space-between;
+            font-weight: 700;
+            margin-top: 2px;
+        }
+        .esl-saco-stock {
+            font-size: 10.5px;
+            font-weight: 800;
+            color: #047857;
+            background: #d1fae5;
+            padding: 2px 7px;
+            border-radius: 4px;
+            border: 1px solid #6ee7b7;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+
+def formatar_data_pt(data_iso: str) -> str:
+    try:
+        return datetime.strptime(data_iso, "%Y-%m-%d").strftime("%d/%m/%Y")
+    except Exception:
+        return data_iso
+
+
+@st.cache_data(show_spinner=False)
+def gerar_qr_src(texto: str) -> str:
+    if HAS_QRCODE:
+        qr = qrcode.QRCode(box_size=3, border=1)
+        qr.add_data(texto)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+        return f"data:image/png;base64,{b64}"
+    return f"https://api.qrserver.com/v1/create-qr-code/?size=80x80&data={quote(texto)}"

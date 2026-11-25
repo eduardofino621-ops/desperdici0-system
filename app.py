@@ -243,6 +243,12 @@ st.title("♻️ Desperdíci0% - Simulação")
 # ==============================================================================
 # SIDEBAR: SIMULAÇÃO DE STRESS OPERACIONAL
 # ==============================================================================
+def _repor_dia_normal():
+    st.session_state.select_perturbacao = "Nenhuma (Operação Normal)"
+    st.session_state.perturbacoes_acumuladas = []
+    st.session_state.historico_sessao = []
+    st.session_state.resultados_simulacao = None
+
 st.sidebar.header("🎛️ Painel de Simulação de Stress")
 perturbacao = st.sidebar.selectbox(
     "Injetar Perturbação no Sistema:",
@@ -251,17 +257,13 @@ perturbacao = st.sidebar.selectbox(
         "A menos de 2 horas de fechar a loja.",
         "Quebra Repentina de Clientes (-50% Procura)",
         "Feriado / Loja Fechada Amanhã (Urgência Máxima)",
-        "Pico de Stock Excedente nas Frutas/Frescos",
+        "Pico de Stock Excedente em Frutas e Carne",
     ],
-
-    key="select_perturbacao"
+    key="select_perturbacao",
 )
 
 simular_btn = st.sidebar.button("▶️ Reexecutar Orquestração / Sincronizar DB", type="primary", width="stretch")
-if st.sidebar.button("🗑️ Limpar Histórico da Sessão", width="stretch"):
-    if st.session_state.get("historico_sessao"):
-        st.session_state.historico_sessao = [st.session_state.historico_sessao[0]]
-        st.rerun()
+st.sidebar.button("🗑️ Repor Dia (Operação Normal)", on_click=_repor_dia_normal, width="stretch")
 
 # ==============================================================================
 # FUNÇÕES AUXILIARES
@@ -653,22 +655,25 @@ def consolidar_sacos_para_esl(sacos_ativos: list[dict]) -> list[dict]:
 
     return list(agrupados.values())
 
-def executar_orquestracao(cenario_perturbacao: str) -> None:
-    fecho_loja_2h = (cenario_perturbacao == "A menos de 2 horas de fechar a loja.")
+def executar_orquestracao(cenario_perturbacao: str, perturbacoes_ativas: list[str] | None = None) -> None:
+    if perturbacoes_ativas is None:
+        perturbacoes_ativas = [] if cenario_perturbacao == "Nenhuma (Operação Normal)" else [cenario_perturbacao]
+
+    fecho_loja_2h = ("A menos de 2 horas de fechar a loja." in perturbacoes_ativas)
     gestor = GestorBaseDadosTemporal(total_produtos=200, seed=2026)
     data_ref = date.today()
     catalogo_copia, lotes_copia = gestor.gerar_dataset_temporal(data_ref=data_ref)
     catalogo_map = {p["produto_id"]: p for p in catalogo_copia}
 
-    if cenario_perturbacao == "Quebra Repentina de Clientes (-50% Procura)":
+    if "Quebra Repentina de Clientes (-50% Procura)" in perturbacoes_ativas:
         for p in catalogo_copia:
             p["vendas_medias_diarias"] = max(0.2, round(p["vendas_medias_diarias"] * 0.5, 2))
-    elif cenario_perturbacao == "Feriado / Loja Fechada Amanhã (Urgência Máxima)":
+    if "Feriado / Loja Fechada Amanhã (Urgência Máxima)" in perturbacoes_ativas:
         for lote in lotes_copia:
             if lote["dias_para_expirar"] <= 3:
                 lote["dias_para_expirar"] = 1
                 lote["data_validade"] = data_ref.isoformat()
-    elif cenario_perturbacao == "Pico de Stock Excedente nas Frutas/Frescos":
+    if "Pico de Stock Excedente em Frutas e Carne" in perturbacoes_ativas:
         for lote in lotes_copia:
             prod = catalogo_map.get(lote["produto_id"], {})
             if prod.get("categoria") in ["carne", "fruta"]:
@@ -862,6 +867,8 @@ def executar_orquestracao(cenario_perturbacao: str) -> None:
 # ==============================================================================
 if "resultados_simulacao" not in st.session_state:
     st.session_state.resultados_simulacao = None
+if "perturbacoes_acumuladas" not in st.session_state:
+    st.session_state.perturbacoes_acumuladas = []
 
 precisa_recalcular = (
     st.session_state.resultados_simulacao is None
@@ -871,8 +878,18 @@ precisa_recalcular = (
 )
 
 if precisa_recalcular:
+    if perturbacao == "Nenhuma (Operação Normal)":
+        st.session_state.perturbacoes_acumuladas = []
+    elif perturbacao not in st.session_state.perturbacoes_acumuladas:
+        st.session_state.perturbacoes_acumuladas.append(perturbacao)
+
     with st.spinner("A sincronizar base de dados em tempo real (500 lotes) e a executar agentes..."):
-        executar_orquestracao(perturbacao)
+        executar_orquestracao(perturbacao, st.session_state.perturbacoes_acumuladas)
+
+if st.session_state.perturbacoes_acumuladas:
+    st.sidebar.markdown("**⚡ Perturbações ativas no dia:**")
+    for p_ativa in st.session_state.perturbacoes_acumuladas:
+        st.sidebar.markdown(f"- {p_ativa}")
 
 data_ativa = st.session_state.data_referencia_ativa
 db_ok, db_msg = st.session_state.db_status

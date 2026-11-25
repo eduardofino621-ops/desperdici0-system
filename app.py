@@ -885,10 +885,9 @@ st.info(
 # ==============================================================================
 # LAYOUT PRINCIPAL EM ABAS
 # ==============================================================================
-tab1, tab2, tab3 = st.tabs([
+tab1, tab2 = st.tabs([
     "📊 Dashboard de Operações (200 Artigos)",
     "🏷️ Etiquetas Eletrónicas (ESL)",
-    "🧠 Raciocínio dos Agentes"
 ])
 
 # ------------------------------------------------------------------------------
@@ -941,9 +940,9 @@ with tab1:
         ("laticinios", "🥛 Laticínios"),
         ("mercearia", "🛒 Mercearia"),
         ("padaria", "🥖 Padaria"),
-        ("pescado", "🐟 Pescado"),
-        
+        ("pescado", "🐟 Pescado"), 
     ]
+
     for linha_cats in (categorias_tab1[:4], categorias_tab1[4:]):
         cols_cat = st.columns(4)
         for col_c, (cat_key, cat_label) in zip(cols_cat, linha_cats):
@@ -1220,11 +1219,11 @@ with tab2:
         ("charcutaria", "🥓 Charcutaria"),
         ("fruta", "🍎 Fruta"),
         ("laticinios", "🥛 Laticínios"),
-        ("mercearia", "🛒 Mercearia")
+        ("mercearia", "🛒 Mercearia"),
         ("padaria", "🥖 Padaria"),
         ("pescado", "🐟 Pescado"),
-        
     ]
+
     for linha_cats in (categorias_botoes[:4], categorias_botoes[4:]):
         cols_cat = st.columns(4)
         for col_c, (cat_key, cat_label) in zip(cols_cat, linha_cats):
@@ -1548,35 +1547,3 @@ with tab2:
                                 row["Stock"] = formatar_stock(0.0, unidade)
                                 row["Destino Operacional"] = "Vendido na Caixa (Esgotado)"
                         st.rerun()
-
-# ------------------------------------------------------------------------------
-# ABA 3: RACIOCÍNIO DOS AGENTES
-# ------------------------------------------------------------------------------
-with tab3:
-    st.subheader("🧠 Cadeia de Decisão e Debate entre Agentes")
-    logs_exibir = st.session_state.logs_estruturados[:30]
-    for item in logs_exibir:
-        badge_risco = "🔴 Risco Crítico" if item["risco_critico"] else "🟢 Controlado"
-        badge_csp = "✅ CSP Aprovado" if item["csp_valido"] else "🛡️ Ajustado pelo CSP"
-        titulo_expander = (
-            f"{item['produto_id']} ({item['lote_id']}) | {item['nome']} — "
-            f"Validade: {item['dias']}d | {badge_risco} | Resultado: {item['preco_final']} [{badge_csp}]"
-        )
-
-        with st.expander(titulo_expander, expanded=(item["produto_id"] in ["PROD-0001", "PROD-0002"])):
-            st.markdown(f"**1️⃣ Agente de Controlo de Inventário** *(Stock: {item['quantidade']} | Excesso previsto: {item['excesso']})*")
-            st.info(item["parecer_inventario"])
-
-            st.markdown(f"**2️⃣ Agente de Logística e Destino Operacional** → Proposta: `{item['destino_proposto']}`")
-            st.write(item["razao_logistica"])
-
-            st.markdown(f"**3️⃣ Agente de Dynamic Pricing** → Desconto Proposto: `{item['desconto_proposto']}`")
-            st.write(item["raciocinio_pricing"])
-
-            st.markdown("**4️⃣ Auditoria do Módulo Regulador (CSP)**")
-            if item["csp_valido"]:
-                st.success(f"Conformidade legal e financeira validada. Preço final: **{item['preco_final']}** | Destino: **{item['destino_final']}**.")
-            else:
-                for erro in item["csp_erros"]:
-                    st.warning(f"Intervenção CSP: {erro}")
-                st.markdown(f"**Resultado Corrigido:** Desconto **{item['desconto_final']}** ({item['preco_final']}) | Destino: **{item['destino_final']}**.")

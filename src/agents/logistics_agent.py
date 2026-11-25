@@ -17,6 +17,7 @@ def agente_logistica_doacao(state: dict) -> dict:
     lote = state.get("lote_atual", {})
     produto = state.get("produto_catalogo", {})
     fecho_loja_2h = state.get("fecho_loja_2h", False)
+    contexto_rag = state.get("contexto_rag", [])
 
     nome = produto.get("nome", "Produto")
     categoria = produto.get("categoria", "geral")
@@ -54,8 +55,6 @@ def agente_logistica_doacao(state: dict) -> dict:
             "razao_logistica": "Padaria mantida em prateleira a preço normal fora da janela de 2h antes do fecho (anti-canibalismo).",
         }
 
-    # Em operação normal, mantém na prateleira ESL para escoamento dinâmico;
-    # só desvia para cozinha/doação quando o excesso ultrapassa 3.2x a procura restante.
     if excesso > 0 and cobertura > (dias * 3.2):
         if categoria in ["pescado", "carne"] and dias <= 1:
             return {
@@ -78,10 +77,19 @@ def agente_logistica_doacao(state: dict) -> dict:
                 temperature=0.1,
             ).with_structured_output(DecisaoLogistica)
 
+            bloco_rag = (
+                "\n".join(f"- [{c['id']}] {c['texto']}" for c in contexto_rag)
+                if contexto_rag
+                else "Sem contexto RAG adicional."
+            )
+
             prompt = f"""
 És o Agente de Logística de uma superfície comercial. Define o destino deste lote:
 - Artigo: {nome} (Categoria: {categoria}) | Stock: {quantidade} {unidade} | Validade: {dias} dia(s)
 - Excesso estimado: {excesso} {unidade} | Parecer Inventário: {parecer_inv}
+
+### Contexto Histórico e Sazonal (RAG):
+{bloco_rag}
 
 Regra: Usa 'prateleira_desconto' sempre que seja viável escoar em loja com etiqueta ESL.
 """

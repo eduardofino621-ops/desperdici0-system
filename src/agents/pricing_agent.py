@@ -12,7 +12,7 @@ class PropostaPricing(BaseModel):
         description="Desconto decimal total entre 0.0 (0%) e 0.70 (70%). Ex: 0.35 para 35% de desconto."
     )
     raciocinio_pricing: str = Field(
-        description="Justificação financeira e comercial concisa (máximo 2 frases) explicando o desconto face à elasticidade, custo e margem."
+        description="Justificação financeira e comercial concisa (máximo 2 frases) explicando o desconto face à elasticidade, custo, margem e contexto RAG."
     )
 
 
@@ -25,8 +25,7 @@ def _calcular_pum(preco: float, produto: dict) -> str:
 
 def agente_dynamic_pricing(state: dict) -> dict:
     """
-    Agente autónomo de Dynamic Pricing alimentado por LangChain e OpenRouter.
-    Garante descontos progressivos por proximidade de validade (FEFO) mesmo em operação normal.
+    Agente autónomo de Dynamic Pricing alimentado por LangChain, OpenRouter e RAG.
     """
     lote = state.get("lote_atual", {})
     produto = state.get("produto_catalogo", {})
@@ -57,6 +56,7 @@ def agente_dynamic_pricing(state: dict) -> dict:
     excesso_estimado = state.get("excesso_estimado", 0.0)
     destino_proposto = state.get("destino_proposto", "prateleira_desconto")
     razao_logistica = state.get("razao_logistica", "")
+    contexto_rag = state.get("contexto_rag", [])
 
     preco_minimo_normal = round(custo * (1 + margem_minima), 2)
     desconto_max_margem = max(
@@ -76,13 +76,18 @@ def agente_dynamic_pricing(state: dict) -> dict:
             )
         }
 
-    # Escada progressiva FEFO em operação normal quando existe excesso previsto
     piso_progressivo = desconto_campanha
     if excesso_estimado > 0 and destino_proposto in ["prateleira_desconto", "sacos_surpresa"]:
         if dias <= 1:
             piso_progressivo = min(0.65, max(desconto_campanha + 0.25, 0.45))
         elif dias == 2:
             piso_progressivo = min(desconto_max_margem, max(desconto_campanha + 0.10, 0.25))
+
+    bloco_rag = (
+        "\n".join(f"- [{c['id']}] {c['texto']}" for c in contexto_rag)
+        if contexto_rag
+        else "Sem regras sazonais ou históricas adicionais."
+    )
 
     api_key = os.environ.get("OPENROUTER_API_KEY")
 
@@ -114,10 +119,13 @@ Define o desconto total ótimo (em decimal de 0.0 a 0.70 sobre o PVP) para escoa
 - Destino definido pela Logística: {destino_proposto} ({razao_logistica})
 - Parecer do Inventário: "{parecer_inventario}"
 
+### Contexto Histórico e Sazonal Recuperado (RAG):
+{bloco_rag}
+
 ### Regras de Decisão:
 1. O desconto proposto NUNCA pode ser inferior ao piso progressivo ({piso_progressivo:.2f}) quando há excesso de stock a <= 2 dias, garantindo diferenciação clara face à campanha ({desconto_campanha:.2f}).
 2. Se não houver excesso previsto e faltarem >= 3 dias, propõe apenas o desconto de campanha ({desconto_campanha:.2f}).
-3. Usa a elasticidade ({elasticidade}) para calibrar o desconto acima do piso sem comprometer a margem.
+3. Usa a elasticidade ({elasticidade}) e o contexto RAG (ciclo do mês, meteorologia, épocas festivas) para calibrar o desconto acima do piso sem comprometer a margem.
 4. Na tua justificação (`raciocinio_pricing`), refere explicitamente o PVP original ({pvp:.2f}€) e o preço final resultante após o desconto proposto.
 """
             proposta: PropostaPricing = llm.invoke([
@@ -128,7 +136,6 @@ Define o desconto total ótimo (em decimal de 0.0 a 0.70 sobre o PVP) para escoa
             desc = round(max(piso_progressivo, proposta.desconto_proposto), 2)
             if (excesso_estimado > 0 or dias <= 2) and desc > 0 and desconto_campanha > 0 and desc <= desconto_campanha:
                 desc = min(0.75, round(desconto_campanha + 0.05, 2))
-            preco_final = round(pvp * (1 - desc), 2)
             preco_final = round(pvp * (1 - desc), 2)
 
             return {
@@ -141,11 +148,15 @@ Define o desconto total ótimo (em decimal de 0.0 a 0.70 sobre o PVP) para escoa
         except Exception:
             pass
 
+    # Fallback determinístico sensibilizado pelo RAG
+    ids_rag = {c["id"] for c in contexto_rag}
+    bonus_rag = 0.05 if ({"CICLO-FIM-MES-02", "METEO-CHUVA-01"} & ids_rag) else 0.0
+
     if excesso_estimado <= 0 and dias > 2:
         desc_proposto = desconto_campanha
     else:
         fator_aceleracao = (quantidade / max(0.1, vendas_medias * max(1, dias))) - 1.0
-        desc_necessario = max(0.10, fator_aceleracao / max(0.5, elasticidade))
+        desc_necessario = max(0.10, (fator_aceleracao / max(0.5, elasticidade)) + bonus_rag)
         teto_desconto = 0.65 if dias <= 1 else max(0.15, desconto_max_margem)
         desc_proposto = round(max(piso_progressivo, min(desc_necessario, teto_desconto)), 2)
         if desc_proposto > 0 and desconto_campanha > 0 and desc_proposto <= desconto_campanha:
@@ -155,6 +166,7 @@ Define o desconto total ótimo (em decimal de 0.0 a 0.70 sobre o PVP) para escoa
     pvp_fmt = f"{pvp:.2f}€".replace(".", ",")
     preco_fmt = f"{preco_final:.2f}€".replace(".", ",")
     pum_fmt = _calcular_pum(preco_final, produto).replace(".", ",")
+    ref_rag = f" [Evidências RAG: {', '.join(c['id'] for c in contexto_rag)}]" if contexto_rag else ""
     return {
         "desconto_proposto": desc_proposto,
         "preco_proposto": preco_final,
@@ -162,6 +174,6 @@ Define o desconto total ótimo (em decimal de 0.0 a 0.70 sobre o PVP) para escoa
         "raciocinio_pricing": (
             f"Desconto progressivo FEFO de {int(desc_proposto * 100)}% sobre o PVP de {pvp_fmt} "
             f"(preço proposto: {preco_fmt}, PUM: {pum_fmt}) aplicado para {dias} dia(s) de validade "
-            f"e excesso de {excesso_estimado} {unidade}."
+            f"e excesso de {excesso_estimado} {unidade}.{ref_rag}"
         )
     }

@@ -7,6 +7,7 @@ from src.agents.logistics_agent import agente_logistica_doacao
 from src.agents.pricing_agent import agente_dynamic_pricing
 from src.csp.constraints import validar_regras_csp
 from src.database.db_manager import GestorBaseDadosTemporal
+from src.rag.retriever import RecuperadorRAG
 from src.simulation.mock_db import calcular_preco_efetivo_lote
 
 MAPA_DESTINOS = {
@@ -144,6 +145,9 @@ def _processar_lote_critico(
     catalogo_copia: list[dict],
     stock_total_padaria_urgente: float,
     fecho_loja_2h: bool,
+    rag_retriever: RecuperadorRAG,
+    perturbacoes_ativas: list[str],
+    data_ref: date,
 ) -> tuple[dict, dict]:
     pvp = prod.get("pvp", 0.0)
     desc_campanha = prod.get("desconto_campanha", 0.0)
@@ -156,6 +160,9 @@ def _processar_lote_critico(
         "produto_catalogo": prod,
         "catalogo_produtos": catalogo_copia,
         "fecho_loja_2h": fecho_loja_2h,
+        "rag_retriever": rag_retriever,
+        "perturbacoes_ativas": perturbacoes_ativas,
+        "data_referencia": data_ref,
     }
 
     res_inv = agente_controlo_inventario(estado_grafo)
@@ -234,6 +241,7 @@ def _processar_lote_critico(
         "desconto_final": f"{int(desc_efetivo * 100)}%",
         "preco_final": preco_exibido_tabela,
         "destino_final": formatar_destino_legivel(destino_final),
+        "contexto_rag": estado_grafo.get("contexto_rag", []),
     }
 
     return linha_tabela, log_card
@@ -243,6 +251,7 @@ def correr_simulacao(cenario_perturbacao: str, perturbacoes_ativas: list[str]) -
     fecho_loja_2h = "A menos de 2 horas de fechar a loja." in perturbacoes_ativas
     gestor = GestorBaseDadosTemporal(total_produtos=200, seed=2026)
     data_ref = date.today()
+    rag_retriever = RecuperadorRAG()
     catalogo_copia, lotes_copia = gestor.gerar_dataset_temporal(data_ref=data_ref)
     catalogo_map = {p["produto_id"]: p for p in catalogo_copia}
 
@@ -323,6 +332,9 @@ def correr_simulacao(cenario_perturbacao: str, perturbacoes_ativas: list[str]) -
                         catalogo_copia,
                         stock_total_padaria_urgente,
                         fecho_loja_2h,
+                        rag_retriever,
+                        perturbacoes_ativas,
+                        data_ref,
                     ),
                 )
                 for idx, lote, prod in tarefas_criticas

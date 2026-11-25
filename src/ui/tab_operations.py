@@ -3,7 +3,7 @@ from st_aggrid import AgGrid, ColumnsAutoSizeMode, GridOptionsBuilder, JsCode
 import streamlit as st
 
 from src.rag.retriever import RecuperadorRAG
-from src.simulation.orchestrator import formatar_eur, simular_horizonte_temporal, formatar_numero_pt
+from src.simulation.orchestrator import formatar_eur, formatar_numero_pt, simular_horizonte_temporal
 from src.ui.components import (
     mostrar_popup_agentes,
     renderizar_analise_decisoes,
@@ -195,30 +195,6 @@ def renderizar_aba_operacoes() -> None:
         )
         renderizar_cartoes_kpi(snap_inicial["kpis"])
 
-        perturbs = [s for s in historico[1:] if s["cenario"] != "Nenhuma (Operação Normal)"]
-        if perturbs:
-            k_base = snap_inicial["kpis"]
-            linhas_hist = []
-            for idx_h, snap in enumerate(perturbs, start=1):
-                k = snap["kpis"]
-                diff_lotes = k["lotes_desc_val"] - k_base["lotes_desc_val"]
-                diff_csp = k["ajustes_csp"] - k_base["ajustes_csp"]
-                linhas_hist.append({
-                    "#": f"#{idx_h}",
-                    "Hora": snap["hora"],
-                    "Perturbação Injetada": snap["cenario"],
-                    "Lotes c/ Desc. Validade": f"{k['lotes_desc_val']} ({diff_lotes:+d})" if diff_lotes != 0 else f"{k['lotes_desc_val']} (=)",
-                    "Ajustes CSP": f"{k['ajustes_csp']} ({diff_csp:+d})" if diff_csp != 0 else f"{k['ajustes_csp']} (=)",
-                })
-
-            st.markdown("<div style='margin-top: 25px;'></div>", unsafe_allow_html=True)
-            with st.expander(f"⚡ Histórico de Perturbações na Sessão ({len(linhas_hist)})", expanded=True):
-                st.dataframe(
-                    pd.DataFrame(linhas_hist),
-                    hide_index=True,
-                    width="stretch",
-                )
-
         snap_atual = historico[-1]
         st.markdown("<br>", unsafe_allow_html=True)
         with st.expander(
@@ -234,33 +210,62 @@ def renderizar_aba_operacoes() -> None:
     st.markdown("<br>", unsafe_allow_html=True)
     _renderizar_tabela_operacoes()
 
+
+def renderizar_historico_perturbacoes_sidebar() -> None:
+    historico = st.session_state.get("historico_sessao", [])
+    if len(historico) <= 1:
+        return
+
+    snap_inicial = historico[0]
+    perturbs = [s for s in historico[1:] if s["cenario"] != "Nenhuma (Operação Normal)"]
+    if not perturbs:
+        return
+
+    k_base = snap_inicial["kpis"]
+    linhas_hist = []
+    for idx_h, snap in enumerate(perturbs, start=1):
+        k = snap["kpis"]
+        diff_lotes = k["lotes_desc_val"] - k_base["lotes_desc_val"]
+        diff_csp = k["ajustes_csp"] - k_base["ajustes_csp"]
+        linhas_hist.append({
+            "#": f"#{idx_h}",
+            "Hora": snap["hora"],
+            "Perturbação": snap["cenario"],
+            "Lotes Desc.": f"{k['lotes_desc_val']} ({diff_lotes:+d})" if diff_lotes != 0 else f"{k['lotes_desc_val']} (=)",
+            "CSP": f"{k['ajustes_csp']} ({diff_csp:+d})" if diff_csp != 0 else f"{k['ajustes_csp']} (=)",
+        })
+
+    with st.sidebar.expander(f"⚡ Histórico de Perturbações ({len(linhas_hist)})", expanded=False):
+        st.dataframe(
+            pd.DataFrame(linhas_hist),
+            hide_index=True,
+            width="stretch",
+        )
+
+
 def renderizar_explorador_rag() -> None:
-    with st.expander("📚 Base de Conhecimento & Motor RAG", expanded=False):
+    with st.sidebar.expander("📚 Base de Conhecimento & Motor RAG", expanded=False):
         rag = RecuperadorRAG()
         total_regras = sum(1 for d in rag.documentos if not d["id"].startswith("Histórico "))
         total_hist = len(rag.documentos) - total_regras
 
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Regras de Negócio Indexadas", total_regras)
-        c2.metric("Registos Históricos (SQLite)", total_hist)
-        c3.metric("Total de Documentos Vetorizados", len(rag.documentos))
+        c1, c2 = st.columns(2)
+        c1.metric("Regras Fixas", total_regras)
+        c2.metric("Registos SQLite", total_hist)
 
-        col_origem, col_cat = st.columns(2)
-        with col_origem:
-            filtro_origem = st.selectbox(
-                "Origem do Conhecimento:",
-                ["Todas", "Regras de Negócio Indexadas", "Registos Históricos (SQLite)"],
-                key="rag_filtro_origem",
-            )
-        with col_cat:
-            categorias_disponiveis = ["Todas"] + sorted({
-                d.get("categoria", "geral").capitalize() for d in rag.documentos
-            })
-            filtro_cat = st.selectbox(
-                "Categoria:",
-                categorias_disponiveis,
-                key="rag_filtro_cat",
-            )
+        filtro_origem = st.selectbox(
+            "Origem do Conhecimento:",
+            ["Todas", "Regras de Negócio Indexadas", "Registos Históricos (SQLite)"],
+            key="rag_filtro_origem",
+        )
+        categorias_disponiveis = ["Todas"] + sorted({
+            d.get("categoria", "geral").capitalize() for d in rag.documentos
+        })
+        filtro_cat = st.selectbox(
+            "Categoria:",
+            categorias_disponiveis,
+            key="rag_filtro_cat",
+        )
 
         docs_filtrados = []
         for d in rag.documentos:
@@ -273,32 +278,28 @@ def renderizar_explorador_rag() -> None:
                 continue
             docs_filtrados.append(d)
 
-        st.caption(f"A apresentar **{len(docs_filtrados)}** de **{len(rag.documentos)}** documentos indexados.")
+        st.caption(f"A apresentar **{len(docs_filtrados)}** de **{len(rag.documentos)}** documentos.")
         if docs_filtrados:
             for d in docs_filtrados:
-                badge_origem = "🗄️ SQLite" if d["id"].startswith("Histórico ") else "📘 Regra Fixa"
+                badge_origem = "🗄️ SQLite" if d["id"].startswith("Histórico ") else "📘 Regra"
                 cat_label = d.get("categoria", "geral").capitalize()
                 st.markdown(f"- {badge_origem} | **`{d['id']}`** *({cat_label})*: {d['texto']}")
         else:
-            st.info("Nenhum documento encontrado para a combinação de filtros selecionada.")
+            st.info("Nenhum documento encontrado.")
 
-def renderizar_simulador_multidia() -> None:
-    with st.expander("⏩ Simulação Acelerada Multi-Dia (Teste de Validades & Desperdício)", expanded=False):
-        c_dias, c_pert, c_btn = st.columns([1, 2, 1])
-        with c_dias:
-            n_dias = st.selectbox("Horizonte (dias):", [5, 7, 10, 14], index=1, key="multidia_n_dias")
-        with c_pert:
-            misturar_pert = st.checkbox(
-                "Injetar combinações variadas de perturbações e clima ao longo dos dias",
-                value=True,
-                key="multidia_pert",
-            )
-        with c_btn:
-            st.markdown("<div style='margin-top: 26px;'></div>", unsafe_allow_html=True)
-            correr_btn = st.button("🚀 Correr Simulação Multi-Dia", type="primary", width="stretch")
+
+def renderizar_simulador_multidia_sidebar() -> None:
+    with st.sidebar.expander("⏩ Simulação Acelerada Multi-Dia", expanded=False):
+        n_dias = st.selectbox("Horizonte (dias):", [5, 7, 10, 14], index=1, key="multidia_n_dias")
+        misturar_pert = st.checkbox(
+            "Injetar perturbações e clima variados",
+            value=True,
+            key="multidia_pert",
+        )
+        correr_btn = st.button("🚀 Correr Simulação Multi-Dia", type="primary", width="stretch")
 
         if correr_btn:
-            with st.spinner(f"A simular {n_dias} dias de operação, vendas FEFO e expirações..."):
+            with st.spinner(f"A simular {n_dias} dias..."):
                 modo_meteo = st.session_state.get("modo_meteo_ativo", "Automático (Tempo Real - Coimbra)")
                 st.session_state["resultado_multidia"] = simular_horizonte_temporal(
                     dias_simulacao=n_dias,
@@ -306,91 +307,104 @@ def renderizar_simulador_multidia() -> None:
                     combinar_perturbacoes_aleatorias=misturar_pert,
                 )
 
-        res = st.session_state.get("resultado_multidia")
-        if res:
-            # 1. Passo a passo cronológico da simulação antes das métricas
-            st.markdown("### 🧭 Passo a Passo da Execução Multi-Dia")
-            for p in res.get("passos_execucao", []):
-                exp_txt = (
-                    f" — *Expirados:* {', '.join(p['exemplos_expirados'])}"
-                    if p["exemplos_expirados"]
-                    else " — *Zero desperdício neste dia*"
-                )
-                st.markdown(
-                    f"**Passo {p['dia_num']} (`{p['data_str']}`)** | 🌦️ `{p['clima']}` | ⚡ `{p['cenario']}` *(Procura: {int(p['fator_procura'] * 100)}%)*\n"
-                    f"1. **Agentes + CSP:** Avaliaram **{formatar_numero_pt(p['lotes_analisados_agentes'], 0)}** lotes críticos (≤ 5 dias) e montaram **{p['sacos_criados']}** Sacos Surpresa.\n"
-                    f"2. **Vendas FEFO & Logística:** Escoadas **{formatar_numero_pt(p['vendidas'], 0)}** un/kg em loja (`{formatar_numero_pt(p['receita'], 2)}€`) e **{formatar_numero_pt(p['doadas'], 0)}** un/kg encaminhadas para Doação/Cozinha.\n"
-                    f"3. **Fecho de Validades:** **{formatar_numero_pt(p['desperdicadas'], 0)}** un/kg expiraram sem compra{exp_txt}."
-                )
+        if st.session_state.get("resultado_multidia"):
+            if st.button("🗑️ Limpar Resultado Multi-Dia", width="stretch"):
+                st.session_state.pop("resultado_multidia", None)
+                st.rerun()
 
-            st.divider()
 
-            # 2. Métricas consolidadas incluindo Taxa de Salvamento (TS)
-            st.markdown("### 📊 Resultados Consolidados do Horizonte")
-            ts_val = res.get("ts_pct", 0.0)
-            atingiu_meta = ts_val > 90.0
-            estado_meta = "✅ Meta atingida (> 90%)" if atingiu_meta else "⚠️ Abaixo da meta (≤ 90%)"
+def renderizar_resultados_multidia() -> None:
+    res = st.session_state.get("resultado_multidia")
+    if not res:
+        return
 
-            m1, m2, m3, m4, m5 = st.columns(5)
-            m1.metric(
-                "Taxa de Salvamento (TS)",
-                f"{formatar_numero_pt(ts_val, 1)}%",
-                estado_meta,
-                delta_color="normal" if atingiu_meta else "inverse",
+    with st.expander(
+        f"⏩ Resultados da Simulação Acelerada Multi-Dia ({res['dias_simulados']} dias)",
+        expanded=True,
+    ):
+        # 1. Passo a passo cronológico da simulação antes das métricas
+        st.markdown("### 🧭 Passo a Passo da Execução Multi-Dia")
+        for p in res.get("passos_execucao", []):
+            exp_txt = (
+                f" — *Expirados:* {', '.join(p['exemplos_expirados'])}"
+                if p["exemplos_expirados"]
+                else " — *Zero desperdício neste dia*"
             )
-            m2.metric(
-                "Unidades / Kg Vendidos",
-                formatar_numero_pt(res["total_vendidas"], 0),
-                f"Receita: {formatar_numero_pt(res['receita_total'], 2)}€",
-                delta_color="off",
-            )
-            m3.metric(
-                "Doação / Cozinha Interna",
-                formatar_numero_pt(res["total_doadas_cozinha"], 0),
-                f"QD: {formatar_numero_pt(res.get('qd_kg', 0.0), 1)} kg | QR: {formatar_numero_pt(res.get('qr_kg', 0.0), 1)} kg",
-                delta_color="off",
-            )
-            m4.metric(
-                "Desperdiçado (Expirado)",
-                formatar_numero_pt(res["total_desperdicadas"], 0),
-                f"Custo: {formatar_numero_pt(res['custo_desperdicio'], 2)}€",
-                delta_color="off",
-            )
-            m5.metric(
-                "Taxa de Desperdício",
-                f"{formatar_numero_pt(res['taxa_desperdicio_pct'], 1)}%",
-                f"Em {res['dias_simulados']} dias",
-                delta_color="off",
+            st.markdown(
+                f"**Passo {p['dia_num']} (`{p['data_str']}`)** | 🌦️ `{p['clima']}` | ⚡ `{p['cenario']}` *(Procura: {int(p['fator_procura'] * 100)}%)*\n"
+                f"1. **Agentes + CSP:** Avaliaram **{formatar_numero_pt(p['lotes_analisados_agentes'], 0)}** lotes críticos (≤ 5 dias) e montaram **{p['sacos_criados']}** Sacos Surpresa.\n"
+                f"2. **Vendas FEFO & Logística:** Escoadas **{formatar_numero_pt(p['vendidas'], 0)}** un/kg em loja (`{formatar_numero_pt(p['receita'], 2)}€`) e **{formatar_numero_pt(p['doadas'], 0)}** un/kg encaminhadas para Doação/Cozinha.\n"
+                f"3. **Fecho de Validades:** **{formatar_numero_pt(p['desperdicadas'], 0)}** un/kg expiraram sem compra{exp_txt}."
             )
 
-            st.caption(
-                f"📐 **Decomposição TS (em massa):** "
-                f"QVD = `{formatar_numero_pt(res.get('qvd_kg', 0.0), 1)} kg` · "
-                f"QD = `{formatar_numero_pt(res.get('qd_kg', 0.0), 1)} kg` · "
-                f"QR = `{formatar_numero_pt(res.get('qr_kg', 0.0), 1)} kg` · "
-                f"QTAR = `{formatar_numero_pt(res.get('qtar_kg', 0.0), 1)} kg`"
+        st.divider()
+
+        # 2. Métricas consolidadas incluindo Taxa de Salvamento (TS)
+        st.markdown("### 📊 Resultados Consolidados do Horizonte")
+        ts_val = res.get("ts_pct", 0.0)
+        atingiu_meta = ts_val > 90.0
+        estado_meta = "✅ Meta atingida (> 90%)" if atingiu_meta else "⚠️ Abaixo da meta (≤ 90%)"
+
+        m1, m2, m3, m4, m5 = st.columns(5)
+        m1.metric(
+            "Taxa de Salvamento (TS)",
+            f"{formatar_numero_pt(ts_val, 1)}%",
+            estado_meta,
+            delta_color="normal" if atingiu_meta else "inverse",
+        )
+        m2.metric(
+            "Unidades / Kg Vendidos",
+            formatar_numero_pt(res["total_vendidas"], 0),
+            f"Receita: {formatar_numero_pt(res['receita_total'], 2)}€",
+            delta_color="off",
+        )
+        m3.metric(
+            "Doação / Cozinha Interna",
+            formatar_numero_pt(res["total_doadas_cozinha"], 0),
+            f"QD: {formatar_numero_pt(res.get('qd_kg', 0.0), 1)} kg | QR: {formatar_numero_pt(res.get('qr_kg', 0.0), 1)} kg",
+            delta_color="off",
+        )
+        m4.metric(
+            "Desperdiçado (Expirado)",
+            formatar_numero_pt(res["total_desperdicadas"], 0),
+            f"Custo: {formatar_numero_pt(res['custo_desperdicio'], 2)}€",
+            delta_color="off",
+        )
+        m5.metric(
+            "Taxa de Desperdício",
+            f"{formatar_numero_pt(res['taxa_desperdicio_pct'], 1)}%",
+            f"Em {res['dias_simulados']} dias",
+            delta_color="off",
+        )
+
+        st.caption(
+            f"📐 **Decomposição TS (em massa):** "
+            f"QVD = `{formatar_numero_pt(res.get('qvd_kg', 0.0), 1)} kg` · "
+            f"QD = `{formatar_numero_pt(res.get('qd_kg', 0.0), 1)} kg` · "
+            f"QR = `{formatar_numero_pt(res.get('qr_kg', 0.0), 1)} kg` · "
+            f"QTAR = `{formatar_numero_pt(res.get('qtar_kg', 0.0), 1)} kg`"
+        )
+
+        # 3. Tabela diária com números formatados no padrão PT
+        df_evo = pd.DataFrame(res["evolucao_diaria"]).copy()
+        for col_num, casas in [
+            ("Vendidas", 1),
+            ("Doação / Cozinha", 1),
+            ("Desperdiçadas (Expiradas)", 1),
+            ("Receita (€)", 2),
+        ]:
+            if col_num in df_evo.columns:
+                df_evo[col_num] = df_evo[col_num].apply(lambda v: formatar_numero_pt(float(v), casas))
+
+        st.dataframe(df_evo, hide_index=True, width="stretch")
+
+        # 4. Gráfico de desperdício por categoria
+        if res["desperdicio_por_categoria"]:
+            st.markdown("**Desperdício acumulado por categoria (unidades/kg expirados):**")
+            df_cat_desp = pd.DataFrame(
+                [
+                    {"Categoria": k, "Desperdiçado": v}
+                    for k, v in sorted(res["desperdicio_por_categoria"].items(), key=lambda x: -x[1])
+                ]
             )
-
-            # 3. Tabela diária com números formatados no padrão PT
-            df_evo = pd.DataFrame(res["evolucao_diaria"]).copy()
-            for col_num, casas in [
-                ("Vendidas", 1),
-                ("Doação / Cozinha", 1),
-                ("Desperdiçadas (Expiradas)", 1),
-                ("Receita (€)", 2),
-            ]:
-                if col_num in df_evo.columns:
-                    df_evo[col_num] = df_evo[col_num].apply(lambda v: formatar_numero_pt(float(v), casas))
-
-            st.dataframe(df_evo, hide_index=True, width="stretch")
-
-            # 4. Gráfico de desperdício por categoria
-            if res["desperdicio_por_categoria"]:
-                st.markdown("**Desperdício acumulado por categoria (unidades/kg expirados):**")
-                df_cat_desp = pd.DataFrame(
-                    [
-                        {"Categoria": k, "Desperdiçado": v}
-                        for k, v in sorted(res["desperdicio_por_categoria"].items(), key=lambda x: -x[1])
-                    ]
-                )
-                st.bar_chart(df_cat_desp.set_index("Categoria"))
+            st.bar_chart(df_cat_desp.set_index("Categoria"))

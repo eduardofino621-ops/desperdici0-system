@@ -8,7 +8,13 @@ load_dotenv(override=True)
 from src.simulation.orchestrator import correr_simulacao
 from src.ui.styles import injetar_css_global
 from src.ui.tab_esl import renderizar_aba_esl
-from src.ui.tab_operations import renderizar_aba_operacoes, renderizar_explorador_rag, renderizar_simulador_multidia
+from src.ui.tab_operations import (
+    renderizar_aba_operacoes,
+    renderizar_explorador_rag,
+    renderizar_historico_perturbacoes_sidebar,
+    renderizar_resultados_multidia,
+    renderizar_simulador_multidia_sidebar,
+)
 
 st.set_page_config(
     page_title="Desperdíci0%",
@@ -92,6 +98,12 @@ if st.session_state.perturbacoes_acumuladas:
     for p_ativa in st.session_state.perturbacoes_acumuladas:
         st.sidebar.markdown(f"- {p_ativa}")
 
+# Ferramentas auxiliares na barra lateral (abaixo do painel de stress)
+st.sidebar.divider()
+renderizar_historico_perturbacoes_sidebar()
+renderizar_simulador_multidia_sidebar()
+renderizar_explorador_rag()
+
 data_ativa = st.session_state.data_referencia_ativa
 _, db_msg = st.session_state.db_status
 meteo_ativa = st.session_state.get("meteorologia_ativa", {})
@@ -113,9 +125,8 @@ tab1, tab2 = st.tabs([
 ])
 
 with tab1:
+    renderizar_resultados_multidia()
     renderizar_aba_operacoes()
-    renderizar_explorador_rag()
-    renderizar_simulador_multidia()
 
 with tab2:
     renderizar_aba_esl(data_ativa)

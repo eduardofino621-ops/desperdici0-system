@@ -180,7 +180,6 @@ def _renderizar_tabela_operacoes() -> None:
         lote_clicado = sel.iloc[0]["Lote"]
     elif isinstance(sel, list) and len(sel) > 0:
         lote_clicado = sel[0]["Lote"]
-
     if lote_clicado:
         st.session_state["aggrid_key_v"] += 1
         mostrar_popup_agentes(lote_clicado)
@@ -288,31 +287,6 @@ def renderizar_explorador_rag() -> None:
             st.info("Nenhum documento encontrado.")
 
 
-def renderizar_simulador_multidia_sidebar() -> None:
-    with st.sidebar.expander("⏩ Simulação Acelerada Multi-Dia", expanded=False):
-        n_dias = st.selectbox("Horizonte (dias):", [5, 7, 10, 14], index=1, key="multidia_n_dias")
-        misturar_pert = st.checkbox(
-            "Injetar perturbações e clima variados",
-            value=True,
-            key="multidia_pert",
-        )
-        correr_btn = st.button("🚀 Correr Simulação Multi-Dia", type="primary", width="stretch")
-
-        if correr_btn:
-            with st.spinner(f"A simular {n_dias} dias..."):
-                modo_meteo = st.session_state.get("modo_meteo_ativo", "Automático (Tempo Real - Coimbra)")
-                st.session_state["resultado_multidia"] = simular_horizonte_temporal(
-                    dias_simulacao=n_dias,
-                    modo_meteo=modo_meteo,
-                    combinar_perturbacoes_aleatorias=misturar_pert,
-                )
-
-        if st.session_state.get("resultado_multidia"):
-            if st.button("🗑️ Limpar Resultado Multi-Dia", width="stretch"):
-                st.session_state.pop("resultado_multidia", None)
-                st.rerun()
-
-
 def renderizar_resultados_multidia() -> None:
     res = st.session_state.get("resultado_multidia")
     if not res:
@@ -398,7 +372,85 @@ def renderizar_resultados_multidia() -> None:
 
         st.dataframe(df_evo, hide_index=True, width="stretch")
 
-        # 4. Gráfico de desperdício por categoria
+        # 4. Comparação Direta: Desperdíci0% vs. Modelo Tradicional (Descontos Fixos 30% / 50%)
+        base = res.get("comparacao_baseline")
+        if base:
+            st.divider()
+            st.markdown("### ⚖️ Impacto Real: Desperdíci0% vs. Modelo Tradicional (Descontos Fixos 30% / 50%)")
+            st.caption(
+                "Comparação direta sobre os mesmos 200 produtos, 500 lotes iniciais e perturbações diárias, "
+                "face a uma política tradicional de etiqueta fixa (30% a 2 dias, 50% no último dia, sem IA/CSP nem escoamento alternativo)."
+            )
+
+            ganho_ts = res["ts_pct"] - base["ts_pct"]
+            reducao_desp_un = base["total_desperdicadas"] - res["total_desperdicadas"]
+            reducao_desp_pct = (reducao_desp_un / max(1.0, base["total_desperdicadas"])) * 100
+            poupanca_custo = base["custo_desperdicio"] - res["custo_desperdicio"]
+            ganho_receita = res["receita_total"] - base["receita_total"]
+
+            k1, k2, k3, k4 = st.columns(4)
+            k1.metric(
+                "Ganho na Taxa Salvamento (TS)",
+                f"+{formatar_numero_pt(ganho_ts, 1)} p.p.",
+                f"De {formatar_numero_pt(base['ts_pct'], 1)}% → {formatar_numero_pt(res['ts_pct'], 1)}%",
+            )
+            k2.metric(
+                "Redução de Desperdício",
+                f"-{formatar_numero_pt(reducao_desp_pct, 1)}%",
+                f"-{formatar_numero_pt(reducao_desp_un, 0)} un/kg salvos do lixo",
+            )
+            k3.metric(
+                "Poupança em Perdas/Descarte",
+                f"{formatar_numero_pt(poupanca_custo, 2)}€",
+                f"Custo caiu de {formatar_numero_pt(base['custo_desperdicio'], 2)}€",
+            )
+            k4.metric(
+                "Receita Extra Recuperada",
+                f"+{formatar_numero_pt(ganho_receita, 2)}€",
+                f"Total: {formatar_numero_pt(res['receita_total'], 2)}€",
+            )
+
+            df_comp = pd.DataFrame([
+                {
+                    "Indicador": "Taxa de Salvamento (TS)",
+                    "Retalho Tradicional (Fixo 30%/50%)": f"{formatar_numero_pt(base['ts_pct'], 1)}%",
+                    "Desperdíci0% (Multi-Agente + CSP)": f"{formatar_numero_pt(res['ts_pct'], 1)}%",
+                    "Diferença Real": f"{ganho_ts:+.1f} p.p.".replace(".", ","),
+                },
+                {
+                    "Indicador": "Taxa de Desperdício Global",
+                    "Retalho Tradicional (Fixo 30%/50%)": f"{formatar_numero_pt(base['taxa_desperdicio_pct'], 1)}%",
+                    "Desperdíci0% (Multi-Agente + CSP)": f"{formatar_numero_pt(res['taxa_desperdicio_pct'], 1)}%",
+                    "Diferença Real": f"{(res['taxa_desperdicio_pct'] - base['taxa_desperdicio_pct']):+.1f} p.p.".replace(".", ","),
+                },
+                {
+                    "Indicador": "Alimentos Desperdiçados (Expirados)",
+                    "Retalho Tradicional (Fixo 30%/50%)": f"{formatar_numero_pt(base['total_desperdicadas'], 0)} un/kg",
+                    "Desperdíci0% (Multi-Agente + CSP)": f"{formatar_numero_pt(res['total_desperdicadas'], 0)} un/kg",
+                    "Diferença Real": f"-{formatar_numero_pt(reducao_desp_un, 0)} un/kg (-{formatar_numero_pt(reducao_desp_pct, 1)}%)",
+                },
+                {
+                    "Indicador": "Encaminhado (Doação / Cozinha / Ração)",
+                    "Retalho Tradicional (Fixo 30%/50%)": "0 un/kg",
+                    "Desperdíci0% (Multi-Agente + CSP)": f"{formatar_numero_pt(res['total_doadas_cozinha'], 0)} un/kg",
+                    "Diferença Real": f"+{formatar_numero_pt(res['total_doadas_cozinha'], 0)} un/kg",
+                },
+                {
+                    "Indicador": "Custo Direto de Desperdício (Aquisição + Descarte)",
+                    "Retalho Tradicional (Fixo 30%/50%)": f"{formatar_numero_pt(base['custo_desperdicio'], 2)}€",
+                    "Desperdíci0% (Multi-Agente + CSP)": f"{formatar_numero_pt(res['custo_desperdicio'], 2)}€",
+                    "Diferença Real": f"-{formatar_numero_pt(poupanca_custo, 2)}€",
+                },
+                {
+                    "Indicador": "Receita Total de Vendas",
+                    "Retalho Tradicional (Fixo 30%/50%)": f"{formatar_numero_pt(base['receita_total'], 2)}€",
+                    "Desperdíci0% (Multi-Agente + CSP)": f"{formatar_numero_pt(res['receita_total'], 2)}€",
+                    "Diferença Real": f"{ganho_receita:+.2f}€".replace(".", ","),
+                },
+            ])
+            st.dataframe(df_comp, hide_index=True, width="stretch")
+
+        # 5. Gráfico de desperdício por categoria
         if res["desperdicio_por_categoria"]:
             st.markdown("**Desperdício acumulado por categoria (unidades/kg expirados):**")
             df_cat_desp = pd.DataFrame(
@@ -408,3 +460,27 @@ def renderizar_resultados_multidia() -> None:
                 ]
             )
             st.bar_chart(df_cat_desp.set_index("Categoria"))
+
+def renderizar_simulador_multidia_sidebar() -> None:
+    with st.sidebar.expander("⏩ Simulação Acelerada Multi-Dia", expanded=False):
+        n_dias = st.selectbox("Horizonte (dias):", [5, 7, 10, 14], index=1, key="multidia_n_dias")
+        misturar_pert = st.checkbox(
+            "Injetar perturbações e clima variados",
+            value=True,
+            key="multidia_pert",
+        )
+        correr_btn = st.button("🚀 Correr Simulação Multi-Dia", type="primary", width="stretch")
+
+        if correr_btn:
+            with st.spinner(f"A simular {n_dias} dias..."):
+                modo_meteo = st.session_state.get("modo_meteo_ativo", "Automático (Tempo Real - Coimbra)")
+                st.session_state["resultado_multidia"] = simular_horizonte_temporal(
+                    dias_simulacao=n_dias,
+                    modo_meteo=modo_meteo,
+                    combinar_perturbacoes_aleatorias=misturar_pert,
+                )
+
+        if st.session_state.get("resultado_multidia"):
+            if st.button("🗑️ Limpar Resultado Multi-Dia", width="stretch"):
+                st.session_state.pop("resultado_multidia", None)
+                st.rerun()

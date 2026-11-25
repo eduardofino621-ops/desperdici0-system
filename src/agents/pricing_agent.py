@@ -1,3 +1,4 @@
+import math
 import os
 from pydantic import BaseModel, Field
 from langchain_openai import ChatOpenAI
@@ -58,7 +59,10 @@ def agente_dynamic_pricing(state: dict) -> dict:
     razao_logistica = state.get("razao_logistica", "")
 
     preco_minimo_normal = round(custo * (1 + margem_minima), 2)
-    desconto_max_margem = max(desconto_campanha, round(1 - (preco_minimo_normal / max(0.01, pvp)), 2))
+    desconto_max_margem = max(
+        desconto_campanha,
+        math.floor((1 - (preco_minimo_normal / max(0.01, pvp))) * 100) / 100,
+    )
     prejuizo_se_expirar = round(custo + custo_descarte, 2)
 
     if destino_proposto in ["doacao_externa", "cozinha_interna", "racao_animal"]:
@@ -114,6 +118,7 @@ Define o desconto total ótimo (em decimal de 0.0 a 0.70 sobre o PVP) para escoa
 1. O desconto proposto NUNCA pode ser inferior ao piso progressivo ({piso_progressivo:.2f}) quando há excesso de stock a <= 2 dias, garantindo diferenciação clara face à campanha ({desconto_campanha:.2f}).
 2. Se não houver excesso previsto e faltarem >= 3 dias, propõe apenas o desconto de campanha ({desconto_campanha:.2f}).
 3. Usa a elasticidade ({elasticidade}) para calibrar o desconto acima do piso sem comprometer a margem.
+4. Na tua justificação (`raciocinio_pricing`), refere explicitamente o PVP original ({pvp:.2f}€) e o preço final resultante após o desconto proposto.
 """
             proposta: PropostaPricing = llm.invoke([
                 SystemMessage(content="És um agente especialista em Revenue Management e Dynamic Pricing retalhista. Responde com rigor matemático."),
@@ -147,12 +152,16 @@ Define o desconto total ótimo (em decimal de 0.0 a 0.70 sobre o PVP) para escoa
             desc_proposto = min(0.75, round(desconto_campanha + 0.05, 2))
 
     preco_final = round(pvp * (1 - desc_proposto), 2)
+    pvp_fmt = f"{pvp:.2f}€".replace(".", ",")
+    preco_fmt = f"{preco_final:.2f}€".replace(".", ",")
+    pum_fmt = _calcular_pum(preco_final, produto).replace(".", ",")
     return {
         "desconto_proposto": desc_proposto,
         "preco_proposto": preco_final,
         "pum_proposto": _calcular_pum(preco_final, produto),
         "raciocinio_pricing": (
-            f"Desconto progressivo FEFO de {int(desc_proposto * 100)}% (PVP {preco_final:.2f}€, PUM {_calcular_pum(preco_final, produto)}) "
-            f"aplicado para {dias} dia(s) de validade e excesso de {excesso_estimado} {unidade}."
+            f"Desconto progressivo FEFO de {int(desc_proposto * 100)}% sobre o PVP de {pvp_fmt} "
+            f"(preço proposto: {preco_fmt}, PUM: {pum_fmt}) aplicado para {dias} dia(s) de validade "
+            f"e excesso de {excesso_estimado} {unidade}."
         )
     }

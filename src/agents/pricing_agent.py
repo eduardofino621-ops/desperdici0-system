@@ -1,5 +1,7 @@
 import math
 import os
+import random
+
 from pydantic import BaseModel, Field
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
@@ -30,6 +32,98 @@ def _calcular_pum(preco: float, produto: dict) -> str:
     pum = preco / max(0.0001, conteudo)
     return f"{pum:.2f} €/{un_ref}"
 
+def otimizar_curva_precos_3dias(
+    produto: dict,
+    lote: dict,
+    piso_minimo: float = 0.0,
+    teto_maximo: float = TETO_DESCONTO_GLOBAL,
+    fator_contexto_procura: float = 1.0,
+    iteracoes: int = 80,
+) -> dict:
+    """
+    Search in Complex Environments (Random-Restart Hill Climbing):
+    Explora combinações de curvas de desconto (D-3, D-2, D-1) para maximizar
+    a margem líquida esperada e minimizar o desperdício residual.
+    """
+    pvp = float(produto.get("pvp", 0.0))
+    custo_aq = float(produto.get("custo_aquisicao", 0.0))
+    custo_desc = float(produto.get("custo_descarte", 0.0))
+    vendas_base = float(produto.get("vendas_medias_diarias", 1.0)) * fator_contexto_procura
+    elast = float(produto.get("elasticidade_preco", 1.2))
+    qtd_inicial = float(lote.get("quantidade_disponivel", 0.0))
+    dias_restantes = max(1, min(3, int(lote.get("dias_para_expirar", 1))))
+
+    if pvp <= 0 or qtd_inicial <= 0:
+        return {"desconto_hoje": piso_minimo, "curva": [piso_minimo], "score": 0.0}
+
+    # Grelha discreta de descontos (passos de 5%)
+    niveis = [
+        round(piso_minimo + 0.05 * i, 2)
+        for i in range(int(round((teto_maximo - piso_minimo) / 0.05)) + 1)
+    ]
+    if not niveis:
+        niveis = [round(piso_minimo, 2)]
+
+    def avaliar_curva(curva: list[float]) -> float:
+        stock = qtd_inicial
+        receita = 0.0
+        vendido_total = 0.0
+        for d in curva:
+            if stock <= 0:
+                break
+            preco = pvp * (1.0 - d)
+            procura_dia = vendas_base * (1.0 + d * elast)
+            vendido = min(stock, procura_dia)
+            receita += vendido * preco
+            vendido_total += vendido
+            stock -= vendido
+
+        # Lucro bruto das unidades vendidas menos prejuízo total das unidades que sobram (lixo)
+        margem_realizada = receita - (vendido_total * custo_aq)
+        perda_desperdicio = stock * (custo_aq + custo_desc)
+        # Pequena penalização por descontos desnecessários quando o stock já escoa
+        penalizacao_desconto = sum(curva) * 0.15 * pvp
+        return margem_realizada - perda_desperdicio - penalizacao_desconto
+
+    rng = random.Random(f"{lote.get('lote_id', '')}-{dias_restantes}")
+    melhor_curva = [niveis[0]] * dias_restantes
+    melhor_score = avaliar_curva(melhor_curva)
+
+    # Procura local com reinícios aleatórios (Search in Complex Environments)
+    for _ in range(iteracoes):
+        # Gera estado inicial válido (curva não decrescente ao longo dos dias)
+        candidato = sorted(rng.choice(niveis) for _ in range(dias_restantes))
+        score_atual = avaliar_curva(candidato)
+
+        # Hill-climbing na vizinhança (±5% num dos dias)
+        melhorou = True
+        while melhorou:
+            melhorou = False
+            for idx in range(dias_restantes):
+                for delta in (-0.05, 0.05):
+                    novo_val = round(candidato[idx] + delta, 2)
+                    if novo_val < niveis[0] or novo_val > niveis[-1]:
+                        continue
+                    vizinho = list(candidato)
+                    vizinho[idx] = novo_val
+                    # Mantém progressividade temporal (desconto sobe ou mantém à medida que expira)
+                    if vizinho != sorted(vizinho):
+                        continue
+                    s_viz = avaliar_curva(vizinho)
+                    if s_viz > score_atual + 1e-6:
+                        candidato = vizinho
+                        score_atual = s_viz
+                        melhorou = True
+
+        if score_atual > melhor_score:
+            melhor_score = score_atual
+            melhor_curva = candidato
+
+    return {
+        "desconto_hoje": melhor_curva[0],
+        "curva": melhor_curva,
+        "score": round(melhor_score, 2),
+    }
 
 def agente_dynamic_pricing(state: dict) -> dict:
     """
@@ -115,6 +209,23 @@ def agente_dynamic_pricing(state: dict) -> dict:
         else "Sem regras sazonais ou históricas adicionais."
     )
 
+    ids_rag = {c["id"] for c in contexto_rag}
+    fator_ctx = (
+        0.75
+        if ({"Ciclo Mensal: Fim do Mês (Contenção)", "Meteorologia: Dia de Chuva / Temporal"} & ids_rag)
+        else 1.0
+    )
+    teto_busca = TETO_DESCONTO_GLOBAL if dias <= 1 else max(piso_progressivo, desconto_max_margem)
+    resultado_busca = otimizar_curva_precos_3dias(
+        produto=produto,
+        lote=lote,
+        piso_minimo=piso_progressivo,
+        teto_maximo=teto_busca,
+        fator_contexto_procura=fator_ctx,
+    )
+    desconto_busca = resultado_busca["desconto_hoje"]
+    curva_str = " → ".join(f"{int(d * 100)}%" for d in resultado_busca["curva"])
+
     api_key = os.environ.get("OPENROUTER_API_KEY")
 
     if api_key:
@@ -127,33 +238,34 @@ def agente_dynamic_pricing(state: dict) -> dict:
             ).with_structured_output(PropostaPricing)
 
             prompt = f"""
-És o Agente de Dynamic Pricing de uma superfície comercial.
-Define o desconto total ótimo (em decimal de 0.0 a {TETO_DESCONTO_GLOBAL:.2f} sobre o PVP) para escoar este lote específico sem destruir margem desnecessariamente.
+    És o Agente de Dynamic Pricing de uma superfície comercial.
+    Define o desconto total ótimo (em decimal de 0.0 a {TETO_DESCONTO_GLOBAL:.2f} sobre o PVP) para escoar este lote específico sem destruir margem desnecessariamente.
 
-### Dados Financeiros e de Procura:
-- Artigo: {nome} (Lote: {lote_id} | Categoria: {categoria})
-- PVP Normal: {pvp:.2f} €/{unidade} (PUM normal: {_calcular_pum(pvp, produto)})
-- Desconto de campanha geral já ativo no artigo: {desconto_campanha * 100:.0f}%
-- Piso mínimo obrigatório para este lote (FEFO): {piso_progressivo * 100:.0f}%
-- Custo de Aquisição: {custo:.2f} €/{unidade}
-- Margem mínima exigida (operação normal): {margem_minima * 100:.0f}% (Preço mínimo normal: {preco_minimo_normal:.2f} € -> desconto máx. s/ quebrar margem: {desconto_max_margem * 100:.0f}%)
-- Custo de descarte se expirar: {custo_descarte:.2f} €/{unidade} (Prejuízo total por expiração: {prejuizo_se_expirar:.2f} €/{unidade})
-- Elasticidade-preço da procura: {elasticidade} (Vendas médias normais: {vendas_medias} {unidade}/dia)
+    ### Dados Financeiros e de Procura:
+    - Artigo: {nome} (Lote: {lote_id} | Categoria: {categoria})
+    - PVP Normal: {pvp:.2f} €/{unidade} (PUM normal: {_calcular_pum(pvp, produto)})
+    - Desconto de campanha geral já ativo no artigo: {desconto_campanha * 100:.0f}%
+    - Piso mínimo obrigatório para este lote (FEFO): {piso_progressivo * 100:.0f}%
+    - Sugestão da busca local (3 dias): {desconto_busca * 100:.0f}% (Curva: {curva_str})
+    - Custo de Aquisição: {custo:.2f} €/{unidade}
+    - Margem mínima exigida (operação normal): {margem_minima * 100:.0f}% (Preço mínimo normal: {preco_minimo_normal:.2f} € -> desconto máx. s/ quebrar margem: {desconto_max_margem * 100:.0f}%)
+    - Custo de descarte se expirar: {custo_descarte:.2f} €/{unidade} (Prejuízo total por expiração: {prejuizo_se_expirar:.2f} €/{unidade})
+    - Elasticidade-preço da procura: {elasticidade} (Vendas médias normais: {vendas_medias} {unidade}/dia)
 
-### Estado do Lote e Pareceres dos Outros Agentes:
-- Stock disponível: {quantidade} {unidade} | Validade: {dias} dia(s) | Excesso estimado: {excesso_estimado} {unidade}
-- Destino definido pela Logística: {destino_proposto} ({razao_logistica})
-- Parecer do Inventário: "{parecer_inventario}"
+    ### Estado do Lote e Pareceres dos Outros Agentes:
+    - Stock disponível: {quantidade} {unidade} | Validade: {dias} dia(s) | Excesso estimado: {excesso_estimado} {unidade}
+    - Destino definido pela Logística: {destino_proposto} ({razao_logistica})
+    - Parecer do Inventário: "{parecer_inventario}"
 
-### Contexto Histórico e Sazonal Recuperado (RAG):
-{bloco_rag}
+    ### Contexto Histórico e Sazonal Recuperado (RAG):
+    {bloco_rag}
 
-### Regras de Decisão:
-1. O desconto proposto NUNCA pode ser inferior ao piso progressivo ({piso_progressivo:.2f}) quando há excesso de stock a <= 3 dias ou padaria a <= 1 dia, garantindo diferenciação clara face à campanha ({desconto_campanha:.2f}).
-2. Se não houver excesso previsto e faltarem >= 4 dias, propõe apenas o desconto de campanha ({desconto_campanha:.2f}).
-3. Usa a elasticidade ({elasticidade}) e o contexto RAG (ciclo do mês, meteorologia, épocas festivas) para calibrar o desconto acima do piso sem comprometer a margem.
-4. Na tua justificação (`raciocinio_pricing`), refere explicitamente o PVP original ({pvp:.2f}€) e o preço final resultante após o desconto proposto.
-"""
+    ### Regras de Decisão:
+    1. O desconto proposto NUNCA pode ser inferior ao piso progressivo ({piso_progressivo:.2f}) quando há excesso de stock a <= 3 dias ou padaria a <= 1 dia, garantindo diferenciação clara face à campanha ({desconto_campanha:.2f}).
+    2. Se não houver excesso previsto e faltarem >= 4 dias, propõe apenas o desconto de campanha ({desconto_campanha:.2f}).
+    3. Usa a elasticidade ({elasticidade}), a sugestão da busca local ({desconto_busca:.2f}) e o contexto RAG (ciclo do mês, meteorologia, épocas festivas) para calibrar o desconto acima do piso sem comprometer a margem.
+    4. Na tua justificação (`raciocinio_pricing`), refere explicitamente o PVP original ({pvp:.2f}€) e o preço final resultante após o desconto proposto.
+    """
             proposta: PropostaPricing = llm.invoke([
                 SystemMessage(
                     content="És um agente especialista em Revenue Management e Dynamic Pricing retalhista. Responde com rigor matemático."
@@ -176,7 +288,6 @@ Define o desconto total ótimo (em decimal de 0.0 a {TETO_DESCONTO_GLOBAL:.2f} s
         except Exception:
             pass
 
-    ids_rag = {c["id"] for c in contexto_rag}
     bonus_rag = (
         0.05
         if excesso_estimado > 0
@@ -185,18 +296,22 @@ Define o desconto total ótimo (em decimal de 0.0 a {TETO_DESCONTO_GLOBAL:.2f} s
     )
     if excesso_estimado <= 0 and dias > 2:
         desc_proposto = desconto_campanha
+    elif excesso_estimado > 0 and dias <= 3:
+        desc_proposto = round(min(teto_busca, max(piso_progressivo, desconto_busca + bonus_rag)), 2)
     else:
         fator_aceleracao = (quantidade / max(0.1, vendas_medias * max(1, dias))) - 1.0
         desc_necessario = max(0.10, (fator_aceleracao / max(0.5, elasticidade)) + bonus_rag)
         teto_desconto = TETO_DESCONTO_GLOBAL if dias <= 1 else max(0.15, desconto_max_margem)
         desc_proposto = round(max(piso_progressivo, min(desc_necessario, teto_desconto)), 2)
-        if desc_proposto > 0 and desconto_campanha > 0 and desc_proposto <= desconto_campanha:
-            desc_proposto = min(TETO_DESCONTO_GLOBAL, round(desconto_campanha + 0.05, 2))
+
+    if desc_proposto > 0 and desconto_campanha > 0 and desc_proposto <= desconto_campanha:
+        desc_proposto = min(TETO_DESCONTO_GLOBAL, round(desconto_campanha + 0.05, 2))
 
     preco_final = round(pvp * (1 - desc_proposto), 2)
     pvp_fmt = f"{pvp:.2f}€".replace(".", ",")
     preco_fmt = f"{preco_final:.2f}€".replace(".", ",")
     pum_fmt = _calcular_pum(preco_final, produto).replace(".", ",")
+    info_curva = f" Curva ({dias}d): {curva_str}." if dias <= 3 and excesso_estimado > 0 else ""
     return {
         "desconto_proposto": desc_proposto,
         "preco_proposto": preco_final,
@@ -204,6 +319,6 @@ Define o desconto total ótimo (em decimal de 0.0 a {TETO_DESCONTO_GLOBAL:.2f} s
         "raciocinio_pricing": (
             f"Desconto progressivo FEFO de {int(desc_proposto * 100)}% sobre o PVP de {pvp_fmt} "
             f"(preço proposto: {preco_fmt}, PUM: {pum_fmt}) aplicado para {dias} dia(s) de validade "
-            f"e excesso de {excesso_estimado} {unidade}."
+            f"e excesso de {excesso_estimado} {unidade}.{info_curva}"
         ),
     }

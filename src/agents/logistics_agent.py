@@ -109,24 +109,24 @@ def agente_logistica_doacao(state: dict) -> dict:
             "razao_logistica": "Padaria mantida em prateleira para escoamento com etiqueta ESL.",
         }
 
-        # Encaminhamento antecipado apenas quando o excesso excede claramente a capacidade de venda
-        fator_cobertura_critica = 3.0 if categoria in ["laticinios", "charcutaria", "pescado", "carne"] else 4.0
-        if excesso > 0 and cobertura > (dias * fator_cobertura_critica):
-            if categoria in ["pescado", "carne", "charcutaria"] and dias <= 1:
-                return {
-                    "destino_proposto": "cozinha_interna",
-                    "razao_logistica": (
-                        f"Excesso crítico ({quantidade} {unidade} para {dias}d); desviado para cozinha interna."
-                    ),
-                }
-            if dias >= 2 and cobertura > (dias * (fator_cobertura_critica + 0.5)):
-                return {
-                    "destino_proposto": "doacao_externa",
-                    "razao_logistica": (
-                        f"Excesso elevado ({quantidade} {unidade}) com >= 48h de validade; encaminhado para "
-                        "doação IPSS."
-                    ),
-                }
+    # Encaminhamento antecipado para não-padaria quando o excesso excede a capacidade de venda
+    fator_cobertura_critica = 2.6 if categoria in ["laticinios", "charcutaria", "pescado", "carne"] else 3.5
+    if excesso > 0 and cobertura > (dias * fator_cobertura_critica):
+        if categoria in ["pescado", "carne", "charcutaria"] and dias <= 1:
+            return {
+                "destino_proposto": "cozinha_interna",
+                "razao_logistica": (
+                    f"Excesso crítico ({quantidade} {unidade} para {dias}d); desviado para cozinha interna."
+                ),
+            }
+        if dias >= 2:
+            return {
+                "destino_proposto": "doacao_externa",
+                "razao_logistica": (
+                    f"Excesso elevado ({quantidade} {unidade}) com >= 48h de validade; encaminhado para "
+                    "doação IPSS."
+                ),
+            }
 
     api_key = os.environ.get("OPENROUTER_API_KEY")
     if api_key and excesso > 0 and cobertura > (dias * 2.0):

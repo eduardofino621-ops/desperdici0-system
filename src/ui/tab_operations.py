@@ -331,38 +331,41 @@ def renderizar_resultados_acelerada() -> None:
             reducao_desp_pct = (reducao_desp_un / max(1.0, base["total_desperdicadas"])) * 100
             poupanca_custo = base["custo_desperdicio"] - res["custo_desperdicio"]
             dif_receita = res["receita_total"] - base["receita_total"]
-
             enc_lidl = base.get(
                 "total_encaminhadas_total",
                 base.get("total_doadas_cozinha", 0.0) + base.get("total_racao_valorizacao", 0.0),
             )
             dif_enc = res["total_doadas_cozinha"] - enc_lidl
 
-            k1, k2, k3, k4 = st.columns(4)
-            k1.metric(
-                "Ganho Taxa de Salvamento (TS)",
-                _formatar_delta_pt(ganho_ts, " p.p.", 1),
-                delta=f"Lidl: {formatar_numero_pt(base['ts_pct'], 1)}% → Desperdíci0%: {formatar_numero_pt(res['ts_pct'], 1)}%",
-                delta_color="normal" if ganho_ts >= 0 else "inverse",
-            )
-            k2.metric(
-                "Desperdício Evitado",
-                f"{formatar_numero_pt(reducao_desp_un, 0)} un/kg",
-                delta=f"{_formatar_delta_pt(-reducao_desp_un, ' un/kg', 0)} ({_formatar_delta_pt(-reducao_desp_pct, '%', 1)})",
-                delta_color="normal" if reducao_desp_un >= 0 else "inverse",
-            )
-            k3.metric(
-                "Custo de Perdas Evitado",
-                f"{formatar_numero_pt(poupanca_custo, 2)}€",
-                delta=f"{formatar_numero_pt(base['custo_desperdicio'], 2)}€ → {formatar_numero_pt(res['custo_desperdicio'], 2)}€",
-                delta_color="normal" if poupanca_custo >= 0 else "inverse",
-            )
-            k4.metric(
-                "Variação de Receita",
-                _formatar_delta_pt(dif_receita, "€", 2),
-                delta=f"Lidl: {formatar_numero_pt(base['receita_total'], 2)}€ → Desperdíci0%: {formatar_numero_pt(res['receita_total'], 2)}€",
-                delta_color="normal",
-            )
+            c1, c2, c3, c4 = st.columns(4)
+
+            with c1:
+                st.metric(
+                    label="Ganho Taxa de Salvamento (TS)",
+                    value=_formatar_delta_pt(ganho_ts, " p.p.", 1),
+                    delta_color="normal",
+                )
+
+            with c2:
+                st.metric(
+                    label="Desperdício Evitado",
+                    value=_formatar_delta_pt(reducao_desp_un, " un/kg", 0),
+                    delta_color="inverse",
+                )
+
+            with c3:
+                st.metric(
+                    label="Custo de Perdas Evitado",
+                    value=_formatar_delta_pt(poupanca_custo, "€", 2),
+                    delta_color="inverse",
+                )
+
+            with c4:
+                st.metric(
+                    label="Variação de Receita",
+                    value=_formatar_delta_pt(dif_receita, "€", 2),
+                    delta_color="normal",
+                )
 
             df_comp = pd.DataFrame([
                 {
@@ -532,7 +535,6 @@ def renderizar_resultados_acelerada() -> None:
                         .properties(height=280)
                     )
                     st.altair_chart(graf_dest, width="stretch")
-
 
 def renderizar_simulador_acelerada_sidebar() -> None:
     with st.sidebar.expander("⏩ Simulação Acelerada", expanded=False):

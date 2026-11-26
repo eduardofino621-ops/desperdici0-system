@@ -26,6 +26,8 @@ def _alternar_cat_tab1(cat_key: str) -> None:
 
 @st.fragment
 def _renderizar_tabela_operacoes() -> None:
+    st.session_state.setdefault("filtro_validade_tab1", "Todos os Lotes")
+
     f1, f2 = st.columns([2, 1])
     with f1:
         pesquisa_tab = st.text_input(
@@ -36,6 +38,7 @@ def _renderizar_tabela_operacoes() -> None:
         filtro_validade_tab = st.selectbox(
             "Filtrar por destino/validade:",
             ["Todos os Lotes", "1 a 5 dias", "Sacos Surpresa", "Superior a 5 dias"],
+            key="filtro_validade_tab1",
         )
 
     st.session_state.setdefault("filtro_cat_tab1", None)

@@ -339,7 +339,7 @@ def renderizar_resultados_acelerada() -> None:
         f"⏩ Resultados da Simulação Acelerada ({res['dias_simulados']} dias)",
         expanded=True,
     ):
-        st.markdown("### 📊 Desempenho Global do Horizonte (Desperdíci0%)")
+        st.markdown("### 📊 Desempenho Global (Desperdíci0%)")
         ts_val = res.get("ts_pct", 0.0)
         atingiu_meta = ts_val > 90.0
         estado_meta = "Meta atingida (> 90%)" if atingiu_meta else "Abaixo da meta (≤ 90%)"

@@ -542,23 +542,16 @@ def renderizar_resultados_acelerada() -> None:
             dados_desp = []
             for cat in ordem_cats:
                 dados_desp.append({
-                dados_desp.append({
                     "Categoria": cat,
-                    "Modelo": "Lidl",
                     "Modelo": "Lidl",
                     "Desperdício": float(desp_trad.get(cat, 0.0)),
                 })
                 dados_desp.append({
-                dados_desp.append({
                     "Categoria": cat,
-                    "Modelo": "Desperdíci0%",
                     "Modelo": "Desperdíci0%",
                     "Desperdício": float(desp_nosso.get(cat, 0.0)),
                 })
 
-            df_graf_desp = pd.DataFrame(dados_desp)
-            grafico_desp = (
-                alt.Chart(df_graf_desp)
             df_graf_desp = pd.DataFrame(dados_desp)
             grafico_desp = (
                 alt.Chart(df_graf_desp)
@@ -575,7 +568,6 @@ def renderizar_resultados_acelerada() -> None:
                         "Modelo:N",
                         scale=alt.Scale(
                             domain=["Lidl", "Desperdíci0%"],
-                            domain=["Lidl", "Desperdíci0%"],
                             range=["#64748b", "#0ea5e9"],
                         ),
                         legend=alt.Legend(title="Modelo de Gestão", orient="bottom"),
@@ -586,7 +578,6 @@ def renderizar_resultados_acelerada() -> None:
                         alt.Tooltip("Desperdício:Q", title="Expirado (un/kg)", format=".1f"),
                     ],
                 )
-                .properties(height=310)
                 .properties(height=310)
             )
             st.altair_chart(grafico_desp, use_container_width=True)

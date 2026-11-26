@@ -8,10 +8,13 @@ def _calcular_pum(preco: float, produto: dict) -> str:
     return f"{pum:.2f} €/{un_ref}"
 
 
-def _eh_terco_sacos_surpresa(lote_id: str) -> bool:
-    """Seleciona de forma determinística 1/3 dos lotes com base no número do lote."""
+def _eh_elegivel_saco_padaria(lote_id: str, quota_fracao: float = 0.50) -> bool:
+    """Seleciona de forma determinística a fração alvo dos lotes com base no número do lote."""
     digitos = "".join(c for c in str(lote_id) if c.isdigit())
-    return (int(digitos) % 3 == 0) if digitos else False
+    if not digitos:
+        return False
+    valor = (int(digitos) % 100) / 100.0
+    return valor < max(0.0, min(1.0, quota_fracao))
 
 
 def validar_regras_csp(
@@ -21,6 +24,7 @@ def validar_regras_csp(
     produto_catalogo: dict,
     stock_total_sacos: float | None = None,
     fecho_loja_2h: bool = False,
+    quebra_clientes: bool = False,
 ) -> dict:
     """
     Valida e corrige restrições CSP cruzando INVENTARIO_LOTES com CATALOGO_PRODUTOS.
@@ -45,7 +49,9 @@ def validar_regras_csp(
 
     if estado_lote == "expirado" or dias <= 0:
         if categoria == "padaria":
-            erros.append("Bloqueio CSP Padaria: Pão em fim de vida útil (0 dias); encaminhado para farinha de ração animal.")
+            erros.append(
+                "Bloqueio CSP Padaria: Pão em fim de vida útil (0 dias); encaminhado para farinha de ração animal."
+            )
             return {
                 "valido": False,
                 "válido": False,
@@ -55,7 +61,10 @@ def validar_regras_csp(
                 "pum_final_ajustado": _calcular_pum(0.0, produto),
                 "destino_ajustado": "racao_animal",
             }
-        erros.append("Bloqueio CSP Crítico: Lote expirado (0 dias restantes); venda e doação proibidas (envio obrigatório para descarte).")
+        erros.append(
+            "Bloqueio CSP Crítico: Lote expirado (0 dias restantes); venda e doação proibidas "
+            "(envio obrigatório para descarte)."
+        )
         return {
             "valido": False,
             "válido": False,
@@ -69,94 +78,107 @@ def validar_regras_csp(
     # Regra 1: Segurança Alimentar Estrita
     if categoria in ["pescado", "carne"] and dias <= 1 and destino_ajustado == "doacao_externa":
         erros.append(
-            "Bloqueio CSP de Segurança: Carne ou pescado com 24h ou menos não pode ser doado externamente; redirecionado para cozinha interna."
+            "Bloqueio CSP de Segurança: Carne ou pescado com 24h ou menos não pode ser doado externamente; "
+            "redirecionado para cozinha interna."
         )
         destino_ajustado = "cozinha_interna"
 
     # Regra 2: Prazo mínimo de 48h para doação externa
     elif destino_ajustado == "doacao_externa" and dias < 2:
         erros.append(
-            "Bloqueio CSP Logístico: Produtos a menos de 48h da validade não podem ser doados (restrição logística das IPSS); redirecionado para prateleira."
+            "Bloqueio CSP Logístico: Produtos a menos de 48h da validade não podem ser doados "
+            "(restrição logística das IPSS); redirecionado para prateleira."
         )
         destino_ajustado = "prateleira_desconto"
 
     # Regra 3A: Pão NUNCA pode ir para cozinha interna (higiene e segurança alimentar)
     if categoria == "padaria" and destino_ajustado == "cozinha_interna":
         erros.append(
-            "Bloqueio CSP Higiene: Pão exposto ao público não pode entrar na cozinha interna; redirecionado para farinha de ração animal."
+            "Bloqueio CSP Higiene: Pão exposto ao público não pode entrar na cozinha interna; "
+            "redirecionado para farinha de ração animal."
         )
         destino_ajustado = "racao_animal"
 
     # Regra 3B: Apenas padaria pode ser doada para transformação em farinha para ração animal
     if categoria != "padaria" and destino_ajustado == "racao_animal":
         erros.append(
-            "Restrição CSP Logística: Apenas excedentes de padaria podem ser encaminhados para farinha de ração animal."
+            "Restrição CSP Logística: Apenas excedentes de padaria podem ser encaminhados para farinha "
+            "de ração animal."
         )
         destino_ajustado = "prateleira_desconto"
 
-    # Regra 3C: Política de Padaria (Sacos Surpresa 1/3 + Ração Animal no fecho)
-    eh_terco_saco = _eh_terco_sacos_surpresa(lote_id)
+    # Regra 3C: Política Dinâmica de Padaria (Quota de Sacos Surpresa + Desconto ESL + Ração Animal)
+    quota_sacos = 0.65 if (fecho_loja_2h or quebra_clientes) else 0.50
+    eh_elegivel_saco = _eh_elegivel_saco_padaria(lote_id, quota_fracao=quota_sacos)
     eh_lote_saco_padaria = (
         categoria == "padaria"
-        and eh_terco_saco
+        and eh_elegivel_saco
         and ((dias == 1 and not fecho_loja_2h) or (dias == 2 and fecho_loja_2h))
     )
 
     if categoria == "padaria":
         if dias == 1 and fecho_loja_2h:
-            if destino_ajustado != "racao_animal":
-                erros.append(
-                    "Restrição CSP Padaria (Fecho): Pão de véspera (1d) a <= 2h do fecho termina a janela comercial; encaminhado para ração animal."
-                )
-                destino_ajustado = "racao_animal"
-                desconto_ajustado = 0.0
+            if destino_ajustado == "sacos_surpresa" and not eh_elegivel_saco:
+                destino_ajustado = "prateleira_desconto"
+            if destino_ajustado == "prateleira_desconto":
+                desconto_ajustado = max(desconto_ajustado, 0.50)
         elif eh_lote_saco_padaria:
             if destino_ajustado == "prateleira_desconto" and desconto_ajustado > desconto_campanha:
                 erros.append(
-                    "Restrição CSP Comercial: Fração de 1/3 da padaria elegível é alocada a sacos surpresa."
+                    f"Restrição CSP Comercial: Fração de {int(quota_sacos * 100)}% da padaria elegível "
+                    "é alocada a Sacos Surpresa."
                 )
                 destino_ajustado = "sacos_surpresa"
-        elif destino_ajustado in ["prateleira_desconto", "sacos_surpresa"] and desconto_ajustado > desconto_campanha:
+        elif dias == 1 and destino_ajustado == "prateleira_desconto":
+            desconto_ajustado = max(desconto_ajustado, 0.35)
+        elif destino_ajustado == "sacos_surpresa" and not eh_elegivel_saco:
             erros.append(
-                "Restrição CSP Anti-Canibalismo: Apenas 1/3 dos lotes de padaria elegíveis entra em sacos surpresa; os restantes mantêm preço normal em prateleira."
+                f"Restrição CSP Quota Sacos: Limite de {int(quota_sacos * 100)}% para Sacos Surpresa "
+                "atingido; lote mantido em prateleira com etiqueta ESL."
             )
             destino_ajustado = "prateleira_desconto"
-            desconto_ajustado = desconto_campanha
 
     # Regra 4: Peso mínimo agregado para sacos surpresa (mínimo 500g / 0.50 kg de padaria no total)
-    peso_sacos = stock_total_sacos if stock_total_sacos is not None else (quantidade * produto.get("conteudo_liquido", 0.10))
+    peso_sacos = (
+        stock_total_sacos
+        if stock_total_sacos is not None
+        else (quantidade * produto.get("conteudo_liquido", 0.10))
+    )
     if destino_ajustado == "sacos_surpresa" and peso_sacos < 0.50:
         erros.append(
-            f"Restrição CSP Logística: Peso agregado insuficiente ({peso_sacos:.2f} kg < 0.50 kg) para criar sacos surpresa; redirecionado para prateleira."
+            f"Restrição CSP Logística: Peso agregado insuficiente ({peso_sacos:.2f} kg < 0.50 kg) "
+            "para criar sacos surpresa; redirecionado para prateleira."
         )
         destino_ajustado = "prateleira_desconto"
 
     # Coerência de destino sem ESL
     if destino_ajustado in ["doacao_externa", "cozinha_interna", "racao_animal"] and desconto_ajustado > 0:
         erros.append(
-            f"Restrição CSP de Coerência: Destino '{destino_ajustado}' não aplica etiqueta ESL ao público; desconto ajustado para 0%."
+            f"Restrição CSP de Coerência: Destino '{destino_ajustado}' não aplica etiqueta ESL ao público; "
+            "desconto ajustado para 0%."
         )
         desconto_ajustado = 0.0
 
     # Regra 5: Desconto de validade tem de ser SEMPRE superior à campanha ativa (+5% mínimo)
-    pode_ter_desc_validade = (categoria != "padaria") or eh_lote_saco_padaria
     if (
         destino_ajustado in ["prateleira_desconto", "sacos_surpresa"]
-        and pode_ter_desc_validade
         and desconto_campanha > 0
         and desconto_ajustado > 0
         and desconto_ajustado <= desconto_campanha
     ):
-        novo_desc = min(0.75, round(desconto_campanha + 0.05, 2))
+        novo_desc = min(0.70, round(desconto_campanha + 0.05, 2))
         erros.append(
             f"Restrição CSP Comercial: Desconto de validade ({int(desconto_ajustado * 100)}%) tem de superar "
             f"a campanha ativa ({int(desconto_campanha * 100)}%); ajustado para {int(novo_desc * 100)}%."
         )
         desconto_ajustado = novo_desc
 
-    # Regra 6: Teto máximo legal de 70% em perecíveis
-    if categoria in ["carne", "pescado", "laticinios", "fruta", "charcutaria"] and desconto_ajustado > 0.70:
-        erros.append("Bloqueio CSP Legal: Desconto excede o limite máximo de 70% para perecíveis; ajustado para 70%.")
+    # Regra 6: Teto máximo legal de 70% em perecíveis e sacos surpresa
+    if (
+        categoria in ["carne", "pescado", "laticinios", "fruta", "charcutaria", "padaria"]
+        and desconto_ajustado > 0.70
+    ):
+        erros.append("Bloqueio CSP Legal: Desconto excede o limite máximo de 70%; ajustado para 70%.")
         desconto_ajustado = 0.70
 
     # Regra 7: Laticínios a <= 24h têm teto de 50%
@@ -171,19 +193,27 @@ def validar_regras_csp(
         if dias > 1:
             preco_piso_normal = custo * (1 + margem_minima)
             if preco_final + 1e-9 < preco_piso_normal and desconto_ajustado > desconto_campanha:
-                desconto_max_permitido = max(desconto_campanha, math.floor((1 - (preco_piso_normal / pvp)) * 100) / 100)
+                desconto_max_permitido = max(
+                    desconto_campanha,
+                    math.floor((1 - (preco_piso_normal / pvp)) * 100) / 100,
+                )
                 erros.append(
                     f"Restrição CSP Financeira (Operação Normal): Preço {preco_final:.2f}€ viola a margem mínima de "
-                    f"{int(margem_minima * 100)}% (piso {preco_piso_normal:.2f}€); desconto limitado a {int(desconto_max_permitido * 100)}%."
+                    f"{int(margem_minima * 100)}% (piso {preco_piso_normal:.2f}€); desconto limitado a "
+                    f"{int(desconto_max_permitido * 100)}%."
                 )
                 desconto_ajustado = desconto_max_permitido
         else:
             preco_piso_critico = max(custo_descarte, pvp * 0.15)
             if preco_final + 1e-9 < preco_piso_critico:
-                desconto_max_critico = max(0.0, math.floor((1 - (preco_piso_critico / pvp)) * 100) / 100)
+                desconto_max_critico = max(
+                    0.0,
+                    math.floor((1 - (preco_piso_critico / pvp)) * 100) / 100,
+                )
                 erros.append(
-                    f"Restrição CSP Financeira (Modo Crítico): Preço {preco_final:.2f}€ abaixo do piso mínimo de recuperação "
-                    f"({preco_piso_critico:.2f}€); desconto limitado a {int(desconto_max_critico * 100)}%."
+                    f"Restrição CSP Financeira (Modo Crítico): Preço {preco_final:.2f}€ abaixo do piso mínimo "
+                    f"de recuperação ({preco_piso_critico:.2f}€); desconto limitado a "
+                    f"{int(desconto_max_critico * 100)}%."
                 )
                 desconto_ajustado = desconto_max_critico
 

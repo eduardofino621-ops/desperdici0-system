@@ -359,14 +359,13 @@ def renderizar_resultados_multidia() -> None:
 
         st.dataframe(df_evo, hide_index=True, width="stretch")
 
-        # 2. Comparação Direta: Desperdíci0% vs. Modelo Tradicional
+        # 2. Comparação Direta: Desperdíci0% vs. Modelo Lidl
         base = res.get("comparacao_baseline")
         if base:
             st.divider()
-            st.markdown("### ⚖️ Impacto Real: Desperdíci0% vs. Modelo Tradicional (Descontos Fixos 30% / 50%)")
+            st.markdown("### ⚖️ Impacto Real: Desperdíci0% vs. Modelo Lidl")
             st.caption(
-                "Mesmos 200 produtos, 500 lotes iniciais e perturbações diárias. "
-                "O modelo tradicional aplica apenas 30% a 2 dias e 50% a 1 dia, sem IA/CSP, Sacos Surpresa nem encaminhamento."
+                "Mesmos 200 produtos, 500 lotes iniciais e perturbações diárias."
             )
 
             ganho_ts = res["ts_pct"] - base["ts_pct"]
@@ -379,11 +378,11 @@ def renderizar_resultados_multidia() -> None:
             k1.metric(
                 "Ganho Taxa de Salvamento (TS)",
                 _formatar_delta_pt(ganho_ts, " p.p.", 1),
-                delta=f"Tradicional: {formatar_numero_pt(base['ts_pct'], 1)}% → Desperdíci0%: {formatar_numero_pt(res['ts_pct'], 1)}%",
+                delta=f"Lidl: {formatar_numero_pt(base['ts_pct'], 1)}% → Desperdíci0%: {formatar_numero_pt(res['ts_pct'], 1)}%",
                 delta_color="normal" if ganho_ts >= 0 else "inverse",
             )
             k2.metric(
-                "Desperdício Evitado (vs. Tradicional)",
+                "Desperdício Evitado (vs. Lidl)",
                 f"{formatar_numero_pt(reducao_desp_un, 0)} un/kg",
                 delta=f"+{formatar_numero_pt(reducao_desp_un, 0)} salvos (-{formatar_numero_pt(reducao_desp_pct, 1)}% vs. {formatar_numero_pt(base['total_desperdicadas'], 0)})",
                 delta_color="normal",
@@ -395,46 +394,46 @@ def renderizar_resultados_multidia() -> None:
                 delta_color="inverse",
             )
             k4.metric(
-                "Variação de Receita (vs. Tradicional)",
+                "Variação de Receita (vs. Lidl)",
                 _formatar_delta_pt(dif_receita, "€", 2),
-                delta=_formatar_delta_pt(dif_receita, "€ vs. Tradicional", 2),
+                delta=_formatar_delta_pt(dif_receita, "€ vs. Lidl", 2),
                 delta_color="normal",
             )
 
             df_comp = pd.DataFrame([
                 {
                     "Indicador": "Taxa de Salvamento (TS)",
-                    "Retalho Tradicional (Fixo 30%/50%)": f"{formatar_numero_pt(base['ts_pct'], 1)}%",
+                    "Lidl": f"{formatar_numero_pt(base['ts_pct'], 1)}%",
                     "Desperdíci0% (Multi-Agente + CSP)": f"{formatar_numero_pt(res['ts_pct'], 1)}%",
                     "Diferença Real": _formatar_delta_pt(ganho_ts, " p.p.", 1),
                 },
                 {
                     "Indicador": "Taxa de Desperdício Global",
-                    "Retalho Tradicional (Fixo 30%/50%)": f"{formatar_numero_pt(base['taxa_desperdicio_pct'], 1)}%",
+                    "Lidl": f"{formatar_numero_pt(base['taxa_desperdicio_pct'], 1)}%",
                     "Desperdíci0% (Multi-Agente + CSP)": f"{formatar_numero_pt(res['taxa_desperdicio_pct'], 1)}%",
                     "Diferença Real": _formatar_delta_pt(res["taxa_desperdicio_pct"] - base["taxa_desperdicio_pct"], " p.p.", 1),
                 },
                 {
                     "Indicador": "Alimentos Desperdiçados (Expirados)",
-                    "Retalho Tradicional (Fixo 30%/50%)": f"{formatar_numero_pt(base['total_desperdicadas'], 0)} un/kg",
+                    "Lidl": f"{formatar_numero_pt(base['total_desperdicadas'], 0)} un/kg",
                     "Desperdíci0% (Multi-Agente + CSP)": f"{formatar_numero_pt(res['total_desperdicadas'], 0)} un/kg",
                     "Diferença Real": f"{_formatar_delta_pt(-reducao_desp_un, ' un/kg', 0)} (-{formatar_numero_pt(reducao_desp_pct, 1)}%)",
                 },
                 {
                     "Indicador": "Encaminhado (Doação / Cozinha / Ração)",
-                    "Retalho Tradicional (Fixo 30%/50%)": "0 un/kg",
+                    "Lidl": "0 un/kg",
                     "Desperdíci0% (Multi-Agente + CSP)": f"{formatar_numero_pt(res['total_doadas_cozinha'], 0)} un/kg",
                     "Diferença Real": _formatar_delta_pt(res["total_doadas_cozinha"], " un/kg", 0),
                 },
                 {
                     "Indicador": "Custo Direto de Desperdício (Aquisição + Descarte)",
-                    "Retalho Tradicional (Fixo 30%/50%)": f"{formatar_numero_pt(base['custo_desperdicio'], 2)}€",
+                    "Lidl": f"{formatar_numero_pt(base['custo_desperdicio'], 2)}€",
                     "Desperdíci0% (Multi-Agente + CSP)": f"{formatar_numero_pt(res['custo_desperdicio'], 2)}€",
                     "Diferença Real": _formatar_delta_pt(-poupanca_custo, "€", 2),
                 },
                 {
                     "Indicador": "Receita Total de Vendas",
-                    "Retalho Tradicional (Fixo 30%/50%)": f"{formatar_numero_pt(base['receita_total'], 2)}€",
+                    "Lidl": f"{formatar_numero_pt(base['receita_total'], 2)}€",
                     "Desperdíci0% (Multi-Agente + CSP)": f"{formatar_numero_pt(res['receita_total'], 2)}€",
                     "Diferença Real": _formatar_delta_pt(dif_receita, "€", 2),
                 },
@@ -447,7 +446,7 @@ def renderizar_resultados_multidia() -> None:
         todas_cats = sorted(set(desp_nosso.keys()) | set(desp_trad.keys()))
         if todas_cats:
             st.markdown(
-                "**Desperdício acumulado por categoria — Tradicional vs. Desperdíci0% (unidades/kg expirados):**")
+                "**Desperdício acumulado por categoria — Lidl vs. Desperdíci0% (unidades/kg expirados):**")
             ordem_cats = sorted(
                 todas_cats,
                 key=lambda c: max(float(desp_trad.get(c, 0.0)), float(desp_nosso.get(c, 0.0))),
@@ -457,7 +456,7 @@ def renderizar_resultados_multidia() -> None:
             for cat in ordem_cats:
                 dados_grafico.append({
                     "Categoria": cat,
-                    "Modelo": "Retalho Tradicional (30%/50%)",
+                    "Modelo": "Lidl",
                     "Desperdício": float(desp_trad.get(cat, 0.0)),
                 })
                 dados_grafico.append({
@@ -481,7 +480,7 @@ def renderizar_resultados_multidia() -> None:
                     color=alt.Color(
                         "Modelo:N",
                         scale=alt.Scale(
-                            domain=["Retalho Tradicional (30%/50%)", "Desperdíci0% (Multi-Agente + CSP)"],
+                            domain=["Lidl", "Desperdíci0% (Multi-Agente + CSP)"],
                             range=["#64748b", "#0ea5e9"],
                         ),
                         legend=alt.Legend(title="Modelo de Gestão", orient="bottom"),

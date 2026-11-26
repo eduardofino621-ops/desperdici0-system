@@ -1,6 +1,18 @@
 from pathlib import Path
 import sqlite3
 
+
+def _normalizar_categoria(categoria: str | None) -> str:
+    cat = (categoria or "geral").strip().lower()
+    if cat in ["peixe", "pescado"]:
+        return "pescado"
+    if cat in ["horticolas", "hortícolas", "legumes"]:
+        return "legumes"
+    if cat in ["laticínios", "laticinios"]:
+        return "laticinios"
+    return cat
+
+
 REGRAS_CONHECIMENTO = [
     # ==========================================================================
     # 1. METEOROLOGIA E FLUXO DE CLIENTES
@@ -11,7 +23,7 @@ REGRAS_CONHECIMENTO = [
         "texto": (
             "Dias de chuva intensa ou temporal reduzem drasticamente o tráfego pedonal e as visitas "
             "espontâneas à loja (quebra de 20% a 40% na procura diária). Os agentes devem antecipar "
-            "excesso de stock em perecíveis (padaria, fruta, carne e pescado) e aplicar descontos de "
+            "excesso de stock em perecíveis (padaria, fruta, legumes, carne e pescado) e aplicar descontos de "
             "validade mais cedo (a partir de 3 dias) para compensar a menor afluência."
         ),
     },
@@ -63,7 +75,7 @@ REGRAS_CONHECIMENTO = [
         "categoria": "geral",
         "texto": (
             "Na véspera de feriados e nos próprios feriados (quando a loja está aberta), há grande afluência "
-            "para compras de última hora e convívios (carne, bebidas, padaria, fruta). Contudo, se a loja "
+            "para compras de última hora e convívios (carne, pescado, bebidas, padaria, fruta). Contudo, se a loja "
             "encerrar no dia seguinte (feriado fechado), qualquer lote com validade <= 1 dia deve ter "
             "urgência máxima: desconto agressivo até 2 horas antes do fecho e doação externa (IPSS) no encerramento."
         ),
@@ -92,7 +104,7 @@ REGRAS_CONHECIMENTO = [
         "categoria": "geral",
         "texto": (
             "Em agosto, nas zonas urbanas não turísticas, a saída de residentes para férias reduz o fluxo "
-            "diário nas lojas de bairro, aumentando o risco de acumulação de stock em laticínios, padaria e frescos."
+            "diário nas lojas de bairro, aumentando o risco de acumulação de stock em laticinios, padaria e frescos."
         ),
     },
 
@@ -105,16 +117,25 @@ REGRAS_CONHECIMENTO = [
         "texto": (
             "Produtos de padaria fresca têm ciclo de vida de 24h. A menos de 2 horas do fecho da loja, "
             "descontos de 50% a 70% ou a agregação em Sacos Surpresa equilibrados (0,50 kg) maximizam a "
-            "recuperação financeira sem custo de descarte."
+            "recuperação financeira; excedentes sem saída seguem para transformação em farinha de ração animal."
         ),
     },
     {
-        "id": "Segurança Alimentar: Carne e Pescado (Consumir Até)",
+        "id": "Segurança Alimentar: Carne (Consumir Até)",
         "categoria": "carne",
         "texto": (
-            "Carne fresca e pescado ostentam data-limite de consumo ('Consumir até'). Por segurança alimentar, "
-            "nunca podem ser vendidos após a data de validade: no último dia útil, se não houver escoamento "
-            "previsto até ao fecho, devem seguir para cozinha interna (até às 18h) ou doação refrigerada."
+            "A carne fresca ostenta data-limite de consumo ('Consumir até'). Por segurança alimentar, "
+            "nunca pode ser vendida após a data de validade: no último dia útil, se não houver escoamento "
+            "previsto até ao fecho, deve seguir para cozinha interna (até às 18h) ou valorização/doação elegível."
+        ),
+    },
+    {
+        "id": "Segurança Alimentar: Pescado (Consumir Até)",
+        "categoria": "pescado",
+        "texto": (
+            "O pescado fresco ostenta data-limite de consumo ('Consumir até'). Por segurança alimentar, "
+            "nunca pode ser vendido após a data de validade e não pode ir para doação externa a <= 24h: "
+            "no último dia útil, se não houver escoamento previsto, deve seguir para cozinha interna ou valorização."
         ),
     },
     {
@@ -126,19 +147,22 @@ REGRAS_CONHECIMENTO = [
         ),
     },
     {
-        "id": "Regra Categoria: Fruta e Hortícolas",
+        "id": "Regra Categoria: Fruta e Legumes",
         "categoria": "fruta",
         "texto": (
-            "Fruta e hortícolas em pico de stock excedente sofrem perda rápida de qualidade visual. "
-            "Descontos de 30% a 50% com 2 a 3 dias de antecedência aceleram o escoamento; fruta muito madura "
-            "mas própria para consumo deve ser canalizada para cozinha interna ou parceria de ração animal."
+            "Fruta e legumes em pico de stock excedente sofrem perda rápida de qualidade visual. "
+            "Descontos de 30% a 50% com 2 a 3 dias de antecedência aceleram o escoamento; excedentes aptos "
+            "seguem para doação ou encaminhamento útil antes de irem para o lixo."
         ),
     },
 ]
 
 
 def carregar_documentos_rag(db_path: str = "data/desperdicio.db") -> list[dict]:
-    documentos = list(REGRAS_CONHECIMENTO)
+    documentos = [
+        {**doc, "categoria": _normalizar_categoria(doc.get("categoria"))}
+        for doc in REGRAS_CONHECIMENTO
+    ]
     caminho = Path(db_path)
     if not caminho.exists():
         return documentos
@@ -180,7 +204,7 @@ def carregar_documentos_rag(db_path: str = "data/desperdicio.db") -> list[dict]:
                 GROUP BY p.categoria
             """)
             for cat, qtd_lotes, desc_medio, receita_rec, prejuizo_evitado in cursor.fetchall():
-                cat_norm = str(cat).lower()
+                cat_norm = _normalizar_categoria(str(cat))
                 documentos.append({
                     "id": f"Histórico Financeiro: {cat_norm.capitalize()}",
                     "categoria": cat_norm,
@@ -232,7 +256,7 @@ def carregar_documentos_rag(db_path: str = "data/desperdicio.db") -> list[dict]:
                 LIMIT 15
             """)
             for prod_id, nome, cat, elast, n_lotes, desc_med, preco_med in cursor.fetchall():
-                cat_norm = str(cat).lower()
+                cat_norm = _normalizar_categoria(str(cat))
                 documentos.append({
                     "id": f"Histórico Artigo: {nome}",
                     "categoria": cat_norm,
@@ -256,7 +280,7 @@ def carregar_documentos_rag(db_path: str = "data/desperdicio.db") -> list[dict]:
                 GROUP BY p.categoria
             """)
             for cat, qtd_sem_desc, vendas_med in cursor.fetchall():
-                cat_norm = str(cat).lower()
+                cat_norm = _normalizar_categoria(str(cat))
                 documentos.append({
                     "id": f"Histórico Rotação Natural: {cat_norm.capitalize()}",
                     "categoria": cat_norm,

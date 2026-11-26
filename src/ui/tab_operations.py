@@ -306,38 +306,47 @@ def renderizar_resultados_acelerada() -> None:
         f"⏩ Resultados da Simulação Acelerada ({res['dias_simulados']} dias)",
         expanded=True,
     ):
-        # 1. Métricas globais do horizonte (Desperdíci0%)
         st.markdown("### 📊 Desempenho Global do Horizonte (Desperdíci0%)")
         ts_val = res.get("ts_pct", 0.0)
         atingiu_meta = ts_val > 90.0
-        estado_meta = "✅ Meta atingida (> 90%)" if atingiu_meta else "⚠️ Abaixo da meta (≤ 90%)"
+        estado_meta = "Meta atingida (> 90%)" if atingiu_meta else "Abaixo da meta (≤ 90%)"
 
         m1, m2, m3, m4, m5 = st.columns(5)
         with m1:
-            st.metric("Taxa de Salvamento (TS)", f"{formatar_numero_pt(ts_val, 1)}%")
+            st.metric(
+                label="Taxa de Salvamento (TS)",
+                value=f"{formatar_numero_pt(ts_val, 1)}%",
+            )
             st.caption(estado_meta)
         with m2:
-            st.metric("Total Vendido", f"{formatar_numero_pt(res['total_vendidas'], 0)} un/kg")
+            st.metric(
+                label="Total Vendido",
+                value=f"{formatar_numero_pt(res['total_vendidas'], 0)} un/kg",
+            )
             st.caption(f"Receita: {formatar_numero_pt(res['receita_total'], 2)}€")
         with m3:
-            st.metric("Doação / Reaproveit.", f"{formatar_numero_pt(res['total_doadas_cozinha'], 0)} un/kg")
-            st.caption(
-                f"QD: {formatar_numero_pt(res.get('qd_kg', 0.0), 1)} kg · "
-                f"QR: {formatar_numero_pt(res.get('qr_kg', 0.0), 1)} kg"
+            st.metric(
+                label="Doação / Reaproveit.",
+                value=f"{formatar_numero_pt(res['total_doadas_cozinha'], 0)} un/kg",
             )
         with m4:
-            st.metric("Desperdício (Lixo)", f"{formatar_numero_pt(res['total_desperdicadas'], 0)} un/kg")
-            st.caption(f"Custo perda: {formatar_numero_pt(res['custo_desperdicio'], 2)}€")
+            st.metric(
+                label="Desperdício (Lixo)",
+                value=f"{formatar_numero_pt(res['total_desperdicadas'], 0)} un/kg",
+            )
+            st.caption(f"Perda: {formatar_numero_pt(res['custo_desperdicio'], 2)}€")
         with m5:
-            st.metric("Taxa de Desperdício", f"{formatar_numero_pt(res['taxa_desperdicio_pct'], 1)}%")
-            st.caption(f"Horizonte: {res['dias_simulados']} dias")
+            st.metric(
+                label="Taxa de Desperdício",
+                value=f"{formatar_numero_pt(res['taxa_desperdicio_pct'], 1)}%",
+            )
 
-        st.caption(
-            f"📐 **TS = ((QVD + QD + QR) / QTAR) × 100:** "
-            f"**QVD** (Vendidos c/ desconto) = `{formatar_numero_pt(res.get('qvd_kg', 0.0), 1)} kg` · "
-            f"**QD** (Doação / Cozinha) = `{formatar_numero_pt(res.get('qd_kg', 0.0), 1)} kg` · "
-            f"**QR** (Ração / Valorização) = `{formatar_numero_pt(res.get('qr_kg', 0.0), 1)} kg` · "
-            f"**QTAR** (Total em risco) = `{formatar_numero_pt(res.get('qtar_kg', 0.0), 1)} kg`"
+        st.info(
+            f"📐 **TS = ((QVD + QD + QR) / QTAR) × 100**  |  "
+            f"**QVD:** {formatar_numero_pt(res.get('qvd_kg', 0.0), 1)} kg  ·  "
+            f"**QD:** {formatar_numero_pt(res.get('qd_kg', 0.0), 1)} kg  ·  "
+            f"**QR:** {formatar_numero_pt(res.get('qr_kg', 0.0), 1)} kg  ·  "
+            f"**QTAR:** {formatar_numero_pt(res.get('qtar_kg', 0.0), 1)} kg"
         )
 
         df_evo = pd.DataFrame(res["evolucao_diaria"]).copy()

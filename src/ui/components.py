@@ -71,7 +71,7 @@ def renderizar_cartoes_kpi(kpis: dict, kpis_base: dict | None = None) -> None:
     c1, c2, c3, c4 = st.columns(4)
     with c1:
         st.markdown(
-            f'<div class="kpi-card"><div class="kpi-title">Catálogo Ativo</div>'
+            f'<div class="kpi-card"><div class="kpi-title">Lotes Ativos em Catálogo</div>'
             f'<div class="kpi-value">{total_lotes_str}</div>'
             f'<div class="kpi-sub">{kpis["total_prods"]} produtos</div></div>',
             unsafe_allow_html=True,
@@ -101,13 +101,7 @@ def renderizar_cartoes_kpi(kpis: dict, kpis_base: dict | None = None) -> None:
 
 def renderizar_analise_decisoes(snapshot: dict, snapshot_base: dict | None = None, chave_prefixo: str = "atual") -> None:
     df_dec = pd.DataFrame(snapshot["registos_decisao"])
-    so_risco = st.toggle(
-        "Focar apenas nos lotes analisados pelos Agentes (Validade ≤ 5 dias)",
-        value=True,
-        key=f"toggle_risco_{chave_prefixo}",
-    )
-
-    df_filt = df_dec[df_dec["Dias"] <= 5] if so_risco else df_dec
+    df_filt = df_dec[df_dec["Dias"] <= 5]
     if df_filt.empty:
         st.info("Sem lotes para apresentar neste filtro.")
         return
@@ -121,7 +115,7 @@ def renderizar_analise_decisoes(snapshot: dict, snapshot_base: dict | None = Non
 
     col_bar, col_tab = st.columns([3, 2], gap="large")
     with col_bar:
-        st.markdown("**📊 Quantificação das Decisões por Destino (n.º de lotes)**")
+        st.markdown("**📊 Quantificação das Decisões dos Agentes por Destino (n.º de lotes)**")
         max_lotes = int(contagem["Lotes"].max()) if not contagem.empty else 10
         base_bar = alt.Chart(contagem).encode(
             y=alt.Y("Decisão:N", sort="-x", title=None),
@@ -153,7 +147,7 @@ def renderizar_analise_decisoes(snapshot: dict, snapshot_base: dict | None = Non
         df_resumo = contagem[["Decisão", "Lotes", "Percentagem"]].copy()
         if snapshot_base is not None:
             df_b = pd.DataFrame(snapshot_base["registos_decisao"])
-            df_b = df_b[df_b["Dias"] <= 5] if so_risco else df_b
+            df_b = df_b[df_b["Dias"] <= 5]
             mapa_base = df_b["Decisão"].value_counts().to_dict()
             df_resumo["Início"] = df_resumo["Decisão"].map(lambda d: int(mapa_base.get(d, 0)))
             df_resumo["Δ"] = (df_resumo["Lotes"] - df_resumo["Início"]).apply(

@@ -204,7 +204,7 @@ def renderizar_aba_operacoes() -> None:
         snap_atual = historico[-1]
         st.markdown("<br>", unsafe_allow_html=True)
         with st.expander(
-            f"📊 Quantificação das Decisões & Gráficos por Categoria — {snap_atual['cenario']} ({snap_atual['hora']})",
+            f"📊 Quantificação das Decisões dos Agentes (Lotes com Validade ≤ 5 dias) & Gráficos por Categoria",
             expanded=True,
         ):
             renderizar_analise_decisoes(

@@ -33,7 +33,7 @@ def mostrar_popup_agentes(lote_id: str) -> None:
     st.caption(f"Validade: {item['dias']}d | {badge_risco} | Resultado: {item['preco_final']} [{badge_csp}]")
 
     evidencias_rag = item.get("contexto_rag", [])
-    with st.expander(f"📚 Contexto Recuperado via RAG ({len(evidencias_rag)} evidências)", expanded=True):
+    with st.expander(f"📖 Contexto Recuperado via RAG ({len(evidencias_rag)} evidências)", expanded=True):
         if evidencias_rag:
             for ev in evidencias_rag:
                 score_pct = int(round(ev.get("score", 0.0) * 100))

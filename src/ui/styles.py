@@ -288,6 +288,86 @@ def injetar_css_global() -> None:
             font-variant-numeric: tabular-nums;
             white-space: nowrap;
         }
+        .rag-origem-banner {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 14px;
+            border-radius: 8px;
+            margin: 14px 0 10px 0;
+            font-weight: 700;
+            font-size: 14px;
+            letter-spacing: 0.2px;
+        }
+        .rag-origem-regra {
+            background: rgba(14, 165, 233, 0.14);
+            border-left: 4px solid #0ea5e9;
+            color: var(--text-color);
+        }
+        .rag-origem-sql {
+            background: rgba(245, 158, 11, 0.14);
+            border-left: 4px solid #f59e0b;
+            color: var(--text-color);
+        }
+        .rag-origem-count {
+            font-size: 12px;
+            font-weight: 600;
+            opacity: 0.8;
+        }
+        .rag-notebook {
+            column-count: 2;
+            column-gap: 26px;
+            column-rule: 1px dashed rgba(128, 128, 128, 0.32);
+            padding: 12px 14px;
+            border: 1px solid rgba(128, 128, 128, 0.22);
+            border-radius: 10px;
+            background: color-mix(in srgb, var(--secondary-background-color) 55%, var(--background-color));
+            margin-bottom: 10px;
+        }
+        @media (max-width: 768px) {
+            .rag-notebook {
+                column-count: 1;
+            }
+        }
+        .rag-cat-header {
+            break-after: avoid;
+            page-break-after: avoid;
+            font-size: 11.5px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            color: var(--text-color);
+            opacity: 0.78;
+            border-bottom: 1px solid rgba(128, 128, 128, 0.28);
+            padding-bottom: 3px;
+            margin: 10px 0 8px 0;
+        }
+        .rag-cat-header:first-child {
+            margin-top: 0;
+        }
+        .rag-card {
+            break-inside: avoid;
+            page-break-inside: avoid;
+            background: var(--background-color);
+            border: 1px solid rgba(128, 128, 128, 0.20);
+            border-radius: 7px;
+            padding: 9px 11px;
+            margin-bottom: 9px;
+        }
+        .rag-card-title {
+            font-size: 12.5px;
+            font-weight: 700;
+            color: var(--text-color);
+            margin-bottom: 4px;
+            line-height: 1.3;
+        }
+        .rag-card-body {
+            font-size: 12.2px;
+            line-height: 1.48;
+            color: var(--text-color);
+            opacity: 0.88;
+            text-align: justify;
+        }
     </style>
     """, unsafe_allow_html=True)
 

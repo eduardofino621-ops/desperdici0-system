@@ -487,129 +487,147 @@ def renderizar_resultados_acelerada() -> None:
             ])
             st.dataframe(df_comp, hide_index=True, width="stretch")
 
-        # 3. Análise Visual por Categoria (Desperdício vs. Destino do Não Desperdiçado)
-        desp_nosso = res.get("desperdicio_por_categoria") or {}
-        desp_trad = (res.get("comparacao_baseline") or {}).get("desperdicio_por_categoria") or {}
-        salv_nosso = res.get("salvamento_por_categoria") or {}
-        salv_lidl = (res.get("comparacao_baseline") or {}).get("salvamento_por_categoria") or {}
+            # 3. Análise Visual por Categoria (Desperdício vs. Destino do Não Desperdiçado)
+            desp_nosso = res.get("desperdicio_por_categoria") or {}
+            desp_trad = (res.get("comparacao_baseline") or {}).get("desperdicio_por_categoria") or {}
+            salv_nosso = res.get("salvamento_por_categoria") or {}
+            salv_lidl = (res.get("comparacao_baseline") or {}).get("salvamento_por_categoria") or {}
 
-        todas_cats = sorted(
-            set(desp_nosso.keys()) | set(desp_trad.keys()) | set(salv_nosso.keys()) | set(salv_lidl.keys())
-        )
-
-        if todas_cats:
-            st.divider()
-            st.markdown("### 📈 Análise por Categoria — Lidl vs. Desperdíci0%")
-
-            ordem_cats = sorted(
-                todas_cats,
-                key=lambda c: max(
-                    float(desp_trad.get(c, 0.0)),
-                    float(desp_nosso.get(c, 0.0)),
-                    sum(float(v) for v in (salv_lidl.get(c) or {}).values()),
-                    sum(float(v) for v in (salv_nosso.get(c) or {}).values()),
-                ),
-                reverse=True,
+            todas_cats = sorted(
+                set(desp_nosso.keys()) | set(desp_trad.keys()) | set(salv_nosso.keys()) | set(salv_lidl.keys())
             )
 
-            # Gráfico 1: Desperdício acumulado por categoria
-            st.markdown("**1. Desperdício acumulado por categoria (unidades/kg expirados):**")
-            dados_desp = []
-            for cat in ordem_cats:
-                dados_desp.append({
-                    "Categoria": cat,
-                    "Modelo": "Lidl",
-                    "Desperdício": float(desp_trad.get(cat, 0.0)),
-                })
-                dados_desp.append({
-                    "Categoria": cat,
-                    "Modelo": "Desperdíci0%",
-                    "Desperdício": float(desp_nosso.get(cat, 0.0)),
-                })
+            if todas_cats:
+                st.divider()
+                st.markdown("### 📈 Análise por Categoria — Lidl vs. Desperdíci0%")
 
-            df_graf_desp = pd.DataFrame(dados_desp)
-            grafico_desp = (
-                alt.Chart(df_graf_desp)
-                .mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
-                .encode(
-                    x=alt.X(
-                        "Categoria:N",
-                        sort=ordem_cats,
-                        axis=alt.Axis(labelAngle=-25, labelLimit=120, title=None),
+                ordem_cats = sorted(
+                    todas_cats,
+                    key=lambda c: max(
+                        float(desp_trad.get(c, 0.0)),
+                        float(desp_nosso.get(c, 0.0)),
+                        sum(float(v) for v in (salv_lidl.get(c) or {}).values()),
+                        sum(float(v) for v in (salv_nosso.get(c) or {}).values()),
                     ),
-                    xOffset=alt.XOffset("Modelo:N"),
-                    y=alt.Y("Desperdício:Q", axis=alt.Axis(title="Unidades / Kg expirados")),
-                    color=alt.Color(
-                        "Modelo:N",
-                        scale=alt.Scale(
-                            domain=["Lidl", "Desperdíci0%"],
-                            range=["#64748b", "#0ea5e9"],
-                        ),
-                        legend=alt.Legend(title="Modelo de Gestão", orient="bottom"),
-                    ),
-                    tooltip=[
-                        alt.Tooltip("Categoria:N", title="Categoria"),
-                        alt.Tooltip("Modelo:N", title="Modelo"),
-                        alt.Tooltip("Desperdício:Q", title="Expirado (un/kg)", format=".1f"),
-                    ],
+                    reverse=True,
                 )
-                .properties(height=310)
-            )
-            st.altair_chart(grafico_desp, width="stretch")
 
-            # Gráfico 2: Destino do que não é desperdiçado
-            st.markdown("**2. Destino do que não é desperdiçado por categoria (unidades/kg salvos):**")
-            cols_dest = st.columns(3)
-            for col_ui, dest_col in zip(cols_dest, DESTINOS_NAO_DESPERDICIO):
-                linhas_dest = []
+                # Gráfico 1: Desperdício acumulado por categoria
+                st.markdown("**1. Desperdício acumulado por categoria (unidades/kg expirados):**")
+                dados_desp = []
                 for cat in ordem_cats:
-                    linhas_dest.append({
+                    dados_desp.append({
                         "Categoria": cat,
                         "Modelo": "Lidl",
-                        "Quantidade": float((salv_lidl.get(cat) or {}).get(dest_col, 0.0)),
+                        "Desperdício": float(desp_trad.get(cat, 0.0)),
                     })
-                    linhas_dest.append({
+                    dados_desp.append({
                         "Categoria": cat,
                         "Modelo": "Desperdíci0%",
-                        "Quantidade": float((salv_nosso.get(cat) or {}).get(dest_col, 0.0)),
+                        "Desperdício": float(desp_nosso.get(cat, 0.0)),
                     })
 
-                df_dest = pd.DataFrame(linhas_dest)
-                with col_ui:
-                    st.caption(f"**{dest_col}**")
-                    graf_dest = (
-                        alt.Chart(df_dest)
-                        .mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
-                        .encode(
-                            x=alt.X(
-                                "Categoria:N",
-                                sort=ordem_cats,
-                                axis=alt.Axis(labelAngle=-35, labelLimit=100, title=None),
+                df_graf_desp = pd.DataFrame(dados_desp)
+                grafico_desp = (
+                    alt.Chart(df_graf_desp)
+                    .mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
+                    .encode(
+                        x=alt.X(
+                            "Categoria:N",
+                            sort=ordem_cats,
+                            axis=alt.Axis(labelAngle=-25, labelLimit=120, title=None),
+                        ),
+                        xOffset=alt.XOffset("Modelo:N"),
+                        y=alt.Y("Desperdício:Q", axis=alt.Axis(title="Unidades / Kg")),
+                        color=alt.Color(
+                            "Modelo:N",
+                            scale=alt.Scale(
+                                domain=["Lidl", "Desperdíci0%"],
+                                range=["#64748b", "#0ea5e9"],
                             ),
-                            xOffset=alt.XOffset("Modelo:N"),
-                            y=alt.Y(
-                                "Quantidade:Q",
-                                axis=alt.Axis(
-                                    title="Unidades / Kg" if dest_col == DESTINOS_NAO_DESPERDICIO[0] else None
-                                ),
-                            ),
-                            color=alt.Color(
-                                "Modelo:N",
-                                scale=alt.Scale(
-                                    domain=["Lidl", "Desperdíci0%"],
-                                    range=["#64748b", "#0ea5e9"],
-                                ),
-                                legend=alt.Legend(title="Modelo de Gestão", orient="bottom"),
-                            ),
-                            tooltip=[
-                                alt.Tooltip("Categoria:N", title="Categoria"),
-                                alt.Tooltip("Modelo:N", title="Modelo"),
-                                alt.Tooltip("Quantidade:Q", title=f"{dest_col} (un/kg)", format=".1f"),
-                            ],
-                        )
-                        .properties(height=280)
+                            legend=None,
+                        ),
+                        tooltip=[
+                            alt.Tooltip("Categoria:N", title="Categoria"),
+                            alt.Tooltip("Modelo:N", title="Modelo"),
+                            alt.Tooltip("Desperdício:Q", title="Expirado (un/kg)", format=".1f"),
+                        ],
                     )
-                    st.altair_chart(graf_dest, width="stretch")
+                    .properties(height=310)
+                )
+                st.altair_chart(grafico_desp, width="stretch")
+
+                # Gráfico 2: Destino do que não é desperdiçado
+                st.markdown("**2. Destino do que não é desperdiçado por categoria (unidades/kg salvos):**")
+                cols_dest = st.columns(3)
+                for col_ui, dest_col in zip(cols_dest, DESTINOS_NAO_DESPERDICIO):
+                    linhas_dest = []
+                    for cat in ordem_cats:
+                        linhas_dest.append({
+                            "Categoria": cat,
+                            "Modelo": "Lidl",
+                            "Quantidade": float((salv_lidl.get(cat) or {}).get(dest_col, 0.0)),
+                        })
+                        linhas_dest.append({
+                            "Categoria": cat,
+                            "Modelo": "Desperdíci0%",
+                            "Quantidade": float((salv_nosso.get(cat) or {}).get(dest_col, 0.0)),
+                        })
+
+                    df_dest = pd.DataFrame(linhas_dest)
+                    with col_ui:
+                        st.caption(f"**{dest_col}**")
+                        graf_dest = (
+                            alt.Chart(df_dest)
+                            .mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
+                            .encode(
+                                x=alt.X(
+                                    "Categoria:N",
+                                    sort=ordem_cats,
+                                    axis=alt.Axis(labelAngle=-35, labelLimit=100, title=None),
+                                ),
+                                xOffset=alt.XOffset("Modelo:N"),
+                                y=alt.Y(
+                                    "Quantidade:Q",
+                                    axis=alt.Axis(
+                                        title="Unidades / Kg" if dest_col == DESTINOS_NAO_DESPERDICIO[0] else None
+                                    ),
+                                ),
+                                color=alt.Color(
+                                    "Modelo:N",
+                                    scale=alt.Scale(
+                                        domain=["Lidl", "Desperdíci0%"],
+                                        range=["#64748b", "#0ea5e9"],
+                                    ),
+                                    legend=None,
+                                ),
+                                tooltip=[
+                                    alt.Tooltip("Categoria:N", title="Categoria"),
+                                    alt.Tooltip("Modelo:N", title="Modelo"),
+                                    alt.Tooltip("Quantidade:Q", title=f"{dest_col} (un/kg)", format=".1f"),
+                                ],
+                            )
+                            .properties(height=280)
+                        )
+                        st.altair_chart(graf_dest, width="stretch")
+
+                # Legenda única e maior no final da secção
+                st.markdown(
+                    """
+                    <div style="display: flex; justify-content: center; align-items: center; gap: 28px; margin-top: 8px; margin-bottom: 12px; font-size: 16px;">
+                        <span style="font-weight: 600; color: var(--text-color);">Modelo de Gestão:</span>
+                        <span style="display: inline-flex; align-items: center; gap: 8px; color: var(--text-color);">
+                            <span style="width: 15px; height: 15px; background-color: #64748b; border-radius: 3px; display: inline-block;"></span>
+                            <span>Lidl</span>
+                        </span>
+                        <span style="display: inline-flex; align-items: center; gap: 8px; color: var(--text-color);">
+                            <span style="width: 15px; height: 15px; background-color: #0ea5e9; border-radius: 3px; display: inline-block;"></span>
+                            <span>Desperdíci0%</span>
+                        </span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
 def renderizar_simulador_acelerada_sidebar() -> None:
     with st.sidebar.expander("⏩ Simulação Acelerada", expanded=False):

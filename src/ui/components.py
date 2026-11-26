@@ -71,7 +71,7 @@ def renderizar_cartoes_kpi(kpis: dict, kpis_base: dict | None = None) -> None:
     c1, c2, c3, c4 = st.columns(4)
     with c1:
         st.markdown(
-            f'<div class="kpi-card"><div class="kpi-title">Catálogo Ativo</div>'
+            f'<div class="kpi-card"><div class="kpi-title">Lotes Ativos em Catálogo</div>'
             f'<div class="kpi-value">{total_lotes_str}</div>'
             f'<div class="kpi-sub">{kpis["total_prods"]} produtos</div></div>',
             unsafe_allow_html=True,
@@ -101,13 +101,7 @@ def renderizar_cartoes_kpi(kpis: dict, kpis_base: dict | None = None) -> None:
 
 def renderizar_analise_decisoes(snapshot: dict, snapshot_base: dict | None = None, chave_prefixo: str = "atual") -> None:
     df_dec = pd.DataFrame(snapshot["registos_decisao"])
-    so_risco = st.toggle(
-        "Focar apenas nos lotes analisados pelos Agentes (Validade ≤ 5 dias)",
-        value=True,
-        key=f"toggle_risco_{chave_prefixo}",
-    )
-
-    df_filt = df_dec[df_dec["Dias"] <= 5] if so_risco else df_dec
+    df_filt = df_dec[df_dec["Dias"] <= 5]
     if df_filt.empty:
         st.info("Sem lotes para apresentar neste filtro.")
         return
@@ -121,7 +115,7 @@ def renderizar_analise_decisoes(snapshot: dict, snapshot_base: dict | None = Non
 
     col_bar, col_tab = st.columns([3, 2], gap="large")
     with col_bar:
-        st.markdown("**📊 Quantificação das Decisões por Destino (n.º de lotes)**")
+        st.markdown("**📊 Quantificação das Decisões dos Agentes por Destino (n.º de lotes)**")
         max_lotes = int(contagem["Lotes"].max()) if not contagem.empty else 10
         base_bar = alt.Chart(contagem).encode(
             y=alt.Y("Decisão:N", sort="-x", title=None),
@@ -153,7 +147,7 @@ def renderizar_analise_decisoes(snapshot: dict, snapshot_base: dict | None = Non
         df_resumo = contagem[["Decisão", "Lotes", "Percentagem"]].copy()
         if snapshot_base is not None:
             df_b = pd.DataFrame(snapshot_base["registos_decisao"])
-            df_b = df_b[df_b["Dias"] <= 5] if so_risco else df_b
+            df_b = df_b[df_b["Dias"] <= 5]
             mapa_base = df_b["Decisão"].value_counts().to_dict()
             df_resumo["Início"] = df_resumo["Decisão"].map(lambda d: int(mapa_base.get(d, 0)))
             df_resumo["Δ"] = (df_resumo["Lotes"] - df_resumo["Início"]).apply(
@@ -195,6 +189,8 @@ def renderizar_analise_decisoes(snapshot: dict, snapshot_base: dict | None = Non
         axis=1,
     )
 
+    selecao_cat = alt.selection_point(name="selecao_categoria", fields=["Categoria"])
+
     barras_stack = (
         alt.Chart(df_stack)
         .mark_bar(cornerRadius=5, width={"band": 0.62}, stroke="rgba(128,128,128,0.25)", strokeWidth=1)
@@ -203,6 +199,7 @@ def renderizar_analise_decisoes(snapshot: dict, snapshot_base: dict | None = Non
             y=alt.Y("y_start:Q", title="% de Lotes", scale=alt.Scale(domain=[0, 100]), axis=alt.Axis(labelExpr="datum.value + '%'")),
             y2="y_end:Q",
             color=alt.Color("Decisão:N", scale=alt.Scale(domain=ordem_decisoes, range=list(CORES_DECISAO.values())), legend=None),
+            opacity=alt.condition(selecao_cat, alt.value(1.0), alt.value(0.45)),
             tooltip=[
                 alt.Tooltip("Categoria:N", title="Categoria"),
                 alt.Tooltip("Decisão:N", title="Decisão"),
@@ -210,10 +207,31 @@ def renderizar_analise_decisoes(snapshot: dict, snapshot_base: dict | None = Non
                 alt.Tooltip("Pct_Fmt:N", title="Percentagem"),
             ],
         )
+        .add_params(selecao_cat)
     )
     rotulos_stack = (
         alt.Chart(df_stack)
         .mark_text(color="#ffffff", fontSize=11, fontWeight="bold", lineBreak="\n")
         .encode(x=alt.X("Categoria:N"), y=alt.Y("y_mid:Q"), text=alt.Text("Rotulo:N"))
     )
-    st.altair_chart((barras_stack + rotulos_stack).properties(height=400).configure_view(stroke=None), theme="streamlit", width="stretch")
+
+    evento_stack = st.altair_chart(
+        (barras_stack + rotulos_stack).properties(height=400).configure_view(stroke=None),
+        theme="streamlit",
+        width="stretch",
+        on_select="rerun",
+        selection_mode="selecao_categoria",
+        key=f"chart_stack_{chave_prefixo}",
+    )
+
+    selecao = evento_stack.get("selection", {}).get("selecao_categoria", []) if evento_stack else []
+    cat_clicada = selecao[0]["Categoria"].lower() if selecao else None
+    chave_ultimo = f"ultimo_click_stack_{chave_prefixo}"
+
+    if st.session_state.get(chave_ultimo) != cat_clicada:
+        st.session_state[chave_ultimo] = cat_clicada
+        if cat_clicada:
+            st.session_state["filtro_cat_tab1"] = cat_clicada
+            st.session_state["filtro_validade_tab1"] = "1 a 5 dias"
+        else:
+            st.session_state["filtro_cat_tab1"] = None

@@ -26,6 +26,8 @@ def _alternar_cat_tab1(cat_key: str) -> None:
 
 @st.fragment
 def _renderizar_tabela_operacoes() -> None:
+    st.session_state.setdefault("filtro_validade_tab1", "Todos os Lotes")
+
     f1, f2 = st.columns([2, 1])
     with f1:
         pesquisa_tab = st.text_input(
@@ -36,6 +38,7 @@ def _renderizar_tabela_operacoes() -> None:
         filtro_validade_tab = st.selectbox(
             "Filtrar por destino/validade:",
             ["Todos os Lotes", "1 a 5 dias", "Sacos Surpresa", "Superior a 5 dias"],
+            key="filtro_validade_tab1",
         )
 
     st.session_state.setdefault("filtro_cat_tab1", None)
@@ -204,7 +207,7 @@ def renderizar_aba_operacoes() -> None:
         snap_atual = historico[-1]
         st.markdown("<br>", unsafe_allow_html=True)
         with st.expander(
-            f"📊 Quantificação das Decisões & Gráficos por Categoria — {snap_atual['cenario']} ({snap_atual['hora']})",
+            "📊 Quantificação das Decisões dos Agentes (Lotes com Validade ≤ 5 dias) & Gráficos por Categoria",
             expanded=True,
         ):
             renderizar_analise_decisoes(
@@ -303,8 +306,8 @@ def renderizar_resultados_acelerada() -> None:
         f"⏩ Resultados da Simulação Acelerada ({res['dias_simulados']} dias)",
         expanded=True,
     ):
-        # 1. Métricas globais do período (Desperdíci0%)
-        st.markdown("### 📊 Desempenho Global (Desperdíci0%)")
+        # 1. Métricas globais do horizonte (Desperdíci0%)
+        st.markdown("### 📊 Desempenho Global do Horizonte (Desperdíci0%)")
         ts_val = res.get("ts_pct", 0.0)
         atingiu_meta = ts_val > 90.0
         estado_meta = "✅ Meta atingida (> 90%)" if atingiu_meta else "⚠️ Abaixo da meta (≤ 90%)"
@@ -327,7 +330,7 @@ def renderizar_resultados_acelerada() -> None:
             st.caption(f"Custo perda: {formatar_numero_pt(res['custo_desperdicio'], 2)}€")
         with m5:
             st.metric("Taxa de Desperdício", f"{formatar_numero_pt(res['taxa_desperdicio_pct'], 1)}%")
-            st.caption(f"Total de dias: {res['dias_simulados']}")
+            st.caption(f"Horizonte: {res['dias_simulados']} dias")
 
         st.caption(
             f"📐 **TS = ((QVD + QD + QR) / QTAR) × 100:** "
@@ -467,6 +470,7 @@ def renderizar_resultados_acelerada() -> None:
                 reverse=True,
             )
 
+            # Gráfico 1: Desperdício acumulado por categoria
             st.markdown("**1. Desperdício acumulado por categoria (unidades/kg expirados):**")
             dados_desp = []
             for cat in ordem_cats:
@@ -509,8 +513,9 @@ def renderizar_resultados_acelerada() -> None:
                 )
                 .properties(height=310)
             )
-            st.altair_chart(grafico_desp, width='stretch')
+            st.altair_chart(grafico_desp, width="stretch")
 
+            # Gráfico 2: Destino do que não é desperdiçado
             st.markdown("**2. Destino do que não é desperdiçado por categoria (unidades/kg salvos):**")
             cols_dest = st.columns(3)
             for col_ui, dest_col in zip(cols_dest, DESTINOS_NAO_DESPERDICIO):
@@ -562,7 +567,8 @@ def renderizar_resultados_acelerada() -> None:
                         )
                         .properties(height=280)
                     )
-                    st.altair_chart(graf_dest, width='stretch')
+                    st.altair_chart(graf_dest, width="stretch")
+
 
 def renderizar_simulador_acelerada_sidebar() -> None:
     with st.sidebar.expander("⏩ Simulação Acelerada", expanded=False):

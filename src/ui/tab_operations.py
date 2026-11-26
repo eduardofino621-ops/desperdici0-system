@@ -397,15 +397,11 @@ def renderizar_resultados_acelerada() -> None:
                 "Ganho Taxa de Salvamento (TS)",
                 _formatar_delta_pt(ganho_ts, " p.p.", 1),
                 delta=f"Lidl: {formatar_numero_pt(base['ts_pct'], 1)}% → Desperdíci0%: {formatar_numero_pt(res['ts_pct'], 1)}%",
-                delta=f"Lidl: {formatar_numero_pt(base['ts_pct'], 1)}% → Desperdíci0%: {formatar_numero_pt(res['ts_pct'], 1)}%",
                 delta_color="normal" if ganho_ts >= 0 else "inverse",
             )
             k2.metric(
                 "Desperdício Evitado",
-                "Desperdício Evitado",
                 f"{formatar_numero_pt(reducao_desp_un, 0)} un/kg",
-                delta=f"{_formatar_delta_pt(-reducao_desp_un, ' un/kg', 0)} ({_formatar_delta_pt(-reducao_desp_pct, '%', 1)})",
-                delta_color="normal" if reducao_desp_un >= 0 else "inverse",
                 delta=f"{_formatar_delta_pt(-reducao_desp_un, ' un/kg', 0)} ({_formatar_delta_pt(-reducao_desp_pct, '%', 1)})",
                 delta_color="normal" if reducao_desp_un >= 0 else "inverse",
             )
@@ -414,14 +410,10 @@ def renderizar_resultados_acelerada() -> None:
                 f"{formatar_numero_pt(poupanca_custo, 2)}€",
                 delta=f"{formatar_numero_pt(base['custo_desperdicio'], 2)}€ → {formatar_numero_pt(res['custo_desperdicio'], 2)}€",
                 delta_color="normal" if poupanca_custo >= 0 else "inverse",
-                delta=f"{formatar_numero_pt(base['custo_desperdicio'], 2)}€ → {formatar_numero_pt(res['custo_desperdicio'], 2)}€",
-                delta_color="normal" if poupanca_custo >= 0 else "inverse",
             )
             k4.metric(
                 "Variação de Receita",
-                "Variação de Receita",
                 _formatar_delta_pt(dif_receita, "€", 2),
-                delta=f"Lidl: {formatar_numero_pt(base['receita_total'], 2)}€ → Desperdíci0%: {formatar_numero_pt(res['receita_total'], 2)}€",
                 delta=f"Lidl: {formatar_numero_pt(base['receita_total'], 2)}€ → Desperdíci0%: {formatar_numero_pt(res['receita_total'], 2)}€",
                 delta_color="normal",
             )
@@ -522,12 +514,6 @@ def renderizar_resultados_acelerada() -> None:
 
             ordem_cats = sorted(
                 todas_cats,
-                key=lambda c: max(
-                    float(desp_trad.get(c, 0.0)),
-                    float(desp_nosso.get(c, 0.0)),
-                    sum(float(v) for v in (salv_lidl.get(c) or {}).values()),
-                    sum(float(v) for v in (salv_nosso.get(c) or {}).values()),
-                ),
                 key=lambda c: max(
                     float(desp_trad.get(c, 0.0)),
                     float(desp_nosso.get(c, 0.0)),

@@ -9,7 +9,7 @@ from src.simulation.orchestrator import (
     _formatar_delta_pt,
     formatar_eur,
     formatar_numero_pt,
-    simular_horizonte_temporal,
+    simular_acelerada,
 )
 from src.ui.components import (
     mostrar_popup_agentes,
@@ -294,17 +294,17 @@ def renderizar_explorador_rag() -> None:
             st.info("Nenhum documento encontrado.")
 
 
-def renderizar_resultados_multidia() -> None:
-    res = st.session_state.get("resultado_multidia")
+def renderizar_resultados_acelerada() -> None:
+    res = st.session_state.get("resultado_acelerada") or st.session_state.get("resultado_multidia")
     if not res:
         return
 
     with st.expander(
-        f"⏩ Resultados da Simulação Acelerada Multi-Dia ({res['dias_simulados']} dias)",
+        f"⏩ Resultados da Simulação Acelerada ({res['dias_simulados']} dias)",
         expanded=True,
     ):
-        # 1. Métricas globais do horizonte (Desperdíci0%)
-        st.markdown("### 📊 Desempenho Global do Horizonte (Desperdíci0%)")
+        # 1. Métricas globais do período (Desperdíci0%)
+        st.markdown("### 📊 Desempenho Global (Desperdíci0%)")
         ts_val = res.get("ts_pct", 0.0)
         atingiu_meta = ts_val > 90.0
         estado_meta = "✅ Meta atingida (> 90%)" if atingiu_meta else "⚠️ Abaixo da meta (≤ 90%)"
@@ -327,7 +327,7 @@ def renderizar_resultados_multidia() -> None:
             st.caption(f"Custo perda: {formatar_numero_pt(res['custo_desperdicio'], 2)}€")
         with m5:
             st.metric("Taxa de Desperdício", f"{formatar_numero_pt(res['taxa_desperdicio_pct'], 1)}%")
-            st.caption(f"Horizonte: {res['dias_simulados']} dias")
+            st.caption(f"Total de dias: {res['dias_simulados']}")
 
         st.caption(
             f"📐 **TS = ((QVD + QD + QR) / QTAR) × 100:** "
@@ -463,7 +463,6 @@ def renderizar_resultados_multidia() -> None:
                 reverse=True,
             )
 
-            # Gráfico 1: Desperdício acumulado por categoria
             st.markdown("**1. Desperdício acumulado por categoria (unidades/kg expirados):**")
             dados_desp = []
             for cat in ordem_cats:
@@ -508,7 +507,6 @@ def renderizar_resultados_multidia() -> None:
             )
             st.altair_chart(grafico_desp, use_container_width=True)
 
-            # Gráfico 2: Destino do que não é desperdiçado (3 painéis com a mesma distinção visual)
             st.markdown("**2. Destino do que não é desperdiçado por categoria (unidades/kg salvos):**")
             cols_dest = st.columns(3)
             for col_ui, dest_col in zip(cols_dest, DESTINOS_NAO_DESPERDICIO):
@@ -563,32 +561,41 @@ def renderizar_resultados_multidia() -> None:
                     st.altair_chart(graf_dest, use_container_width=True)
 
 
-def renderizar_simulador_multidia_sidebar() -> None:
-    with st.sidebar.expander("⏩ Simulação Acelerada Multi-Dia", expanded=False):
+renderizar_resultados_multidia = renderizar_resultados_acelerada
+
+
+def renderizar_simulador_acelerada_sidebar() -> None:
+    with st.sidebar.expander("⏩ Simulação Acelerada", expanded=False):
         n_dias = st.selectbox(
-            "Horizonte (dias):",
+            "Dias:",
             [2, 5, 7, 10],
             index=1,
-            key="multidia_n_dias",
+            key="acelerada_n_dias",
         )
         misturar_pert = st.checkbox(
             "Injetar perturbações e clima variados",
             value=True,
-            key="multidia_pert",
+            key="acelerada_pert",
         )
-        correr_btn = st.button("🚀 Correr Simulação Multi-Dia", type="primary", width="stretch")
+        correr_btn = st.button("🚀 Correr Simulação Acelerada", type="primary", width="stretch")
 
         if correr_btn:
             dias_escolhidos = int(n_dias)
             with st.spinner(f"A simular {dias_escolhidos} dias..."):
                 modo_meteo = st.session_state.get("modo_meteo_ativo", "Automático (Tempo Real - Coimbra)")
-                st.session_state["resultado_multidia"] = simular_horizonte_temporal(
+                resultado = simular_acelerada(
                     dias_simulacao=dias_escolhidos,
                     modo_meteo=modo_meteo,
                     combinar_perturbacoes_aleatorias=misturar_pert,
                 )
+                st.session_state["resultado_acelerada"] = resultado
+                st.session_state["resultado_multidia"] = resultado
 
-        if st.session_state.get("resultado_multidia"):
-            if st.button("🗑️ Limpar Resultado Multi-Dia", width="stretch"):
+        if st.session_state.get("resultado_acelerada") or st.session_state.get("resultado_multidia"):
+            if st.button("🗑️ Limpar Resultado", width="stretch"):
+                st.session_state.pop("resultado_acelerada", None)
                 st.session_state.pop("resultado_multidia", None)
                 st.rerun()
+
+
+renderizar_simulador_multidia_sidebar = renderizar_simulador_acelerada_sidebar

@@ -6,12 +6,12 @@ import streamlit as st
 load_dotenv(override=True)
 
 from src.simulation.orchestrator import correr_simulacao
+from src.ui.components import formatar_meteo_rotulo
 from src.ui.styles import injetar_css_global
 from src.ui.tab_esl import renderizar_aba_esl
 from src.ui.tab_operations import (
     renderizar_aba_operacoes,
     renderizar_explorador_rag,
-    renderizar_historico_perturbacoes_sidebar,
     renderizar_resultados_acelerada,
     renderizar_simulador_acelerada_sidebar,
 )
@@ -30,7 +30,9 @@ def _repor_dia_normal() -> None:
     st.session_state.select_perturbacao = "Nenhuma (Operação Normal)"
     st.session_state.select_meteo = "Automático (Tempo Real - Coimbra)"
     st.session_state.perturbacoes_acumuladas = []
+    st.session_state.perturbacoes_registadas = []
     st.session_state.historico_sessao = []
+    st.session_state.pagina_decisoes = 0
     st.session_state.resultados_simulacao = None
 
 
@@ -60,30 +62,38 @@ modo_meteo = st.sidebar.selectbox(
     key="select_meteo",
 )
 
-simular_btn = st.sidebar.button("▶️ Reexecutar Orquestração / Sincronizar DB", type="primary", width="stretch")
-st.sidebar.button("🗑️ Repor Dia (Operação Normal)", on_click=_repor_dia_normal, width="stretch")
+simular_btn = st.sidebar.button("▶️ Orquestração dos Agentes", type="primary", width="stretch")
 
 # ==============================================================================
 # GESTÃO DE ESTADO E ORQUESTRAÇÃO
 # ==============================================================================
 st.session_state.setdefault("resultados_simulacao", None)
 st.session_state.setdefault("perturbacoes_acumuladas", [])
+st.session_state.setdefault("perturbacoes_registadas", [])
+st.session_state.setdefault("historico_sessao", [])
+st.session_state.setdefault("pagina_decisoes", 0)
 
-precisa_recalcular = (
+eh_arranque_inicial = (
     st.session_state.resultados_simulacao is None
-    or simular_btn
     or st.session_state.get("data_referencia_ativa") != date.today()
 )
+precisa_recalcular = eh_arranque_inicial or simular_btn
 
 if precisa_recalcular:
-    if perturbacao == "Nenhuma (Operação Normal)":
-        st.session_state.perturbacoes_acumuladas = []
-    elif perturbacao not in st.session_state.perturbacoes_acumuladas:
+    eh_perturbacao_op = perturbacao != "Nenhuma (Operação Normal)"
+    eh_meteo_simulada = modo_meteo != "Automático (Tempo Real - Coimbra)"
+    eh_nova_perturbacao = (not eh_arranque_inicial) and (eh_perturbacao_op or eh_meteo_simulada)
+
+    if eh_perturbacao_op and perturbacao not in st.session_state.perturbacoes_acumuladas:
         st.session_state.perturbacoes_acumuladas.append(perturbacao)
+
+    cenario_exec = perturbacao if eh_perturbacao_op else (
+        "Alteração Meteorológica" if eh_meteo_simulada else "Nenhuma (Operação Normal)"
+    )
 
     with st.spinner("A sincronizar base de dados em tempo real (500 lotes) e a executar agentes..."):
         estado = correr_simulacao(
-            perturbacao,
+            cenario_exec,
             st.session_state.perturbacoes_acumuladas,
             modo_meteo=modo_meteo,
         )
@@ -91,30 +101,55 @@ if precisa_recalcular:
         for chave, valor in estado.items():
             st.session_state[chave] = valor
         st.session_state["modo_meteo_ativo"] = modo_meteo
-        st.session_state.setdefault("historico_sessao", []).append(snapshot)
 
-if st.session_state.perturbacoes_acumuladas:
-    st.sidebar.markdown("**⚡ Perturbações ativas no dia:**")
-    for p_ativa in st.session_state.perturbacoes_acumuladas:
-        st.sidebar.markdown(f"- {p_ativa}")
+        if eh_arranque_inicial or not st.session_state.historico_sessao:
+            st.session_state.historico_sessao = [snapshot]
+            st.session_state.pagina_decisoes = 0
+        elif eh_nova_perturbacao:
+            num_pert = len(st.session_state.perturbacoes_registadas) + 1
+            meteo_tipo, meteo_desc = formatar_meteo_rotulo(snapshot.get("meteorologia"))
+            st.session_state.perturbacoes_registadas.append({
+                "numero": num_pert,
+                "descricao": cenario_exec,
+                "meteo_tipo": meteo_tipo,
+                "meteo_desc": meteo_desc,
+            })
+            snapshot["numero_perturbacao"] = num_pert
+            snapshot["descricao_perturbacao"] = cenario_exec
+            st.session_state.historico_sessao.append(snapshot)
+            st.session_state.pagina_decisoes = len(st.session_state.historico_sessao) - 1
+        else:
+            # Reexecução sem nova perturbação/clima simulado: atualiza o último snapshot ativo
+            ultimo = st.session_state.historico_sessao[-1]
+            if "numero_perturbacao" in ultimo:
+                snapshot["numero_perturbacao"] = ultimo["numero_perturbacao"]
+                snapshot["descricao_perturbacao"] = ultimo["descricao_perturbacao"]
+            st.session_state.historico_sessao[-1] = snapshot
 
-# Ferramentas auxiliares na barra lateral (abaixo do painel de stress)
+# Bloco condicional: só aparece após existir pelo menos 1 perturbação injetada
+if st.session_state.perturbacoes_registadas:
+    st.sidebar.markdown("**⚡ Perturbações Ativas do Dia:**")
+    for p_reg in st.session_state.perturbacoes_registadas:
+        st.sidebar.markdown(
+            f"**#{p_reg['numero']}** {p_reg['descricao']}  \n"
+            f"<span style='font-size:12px;opacity:0.85;'>🌦️ Meteorologia ({p_reg['meteo_tipo']}): {p_reg['meteo_desc']}</span>",
+            unsafe_allow_html=True,
+        )
+    st.sidebar.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
+    st.sidebar.button(
+        "🗑️ Repor Dia (Operação Normal)",
+        key="btn_repor_dia",
+        on_click=_repor_dia_normal,
+        width="stretch",
+    )
+
+# Ferramentas auxiliares na barra lateral
 st.sidebar.divider()
-renderizar_historico_perturbacoes_sidebar()
 renderizar_simulador_acelerada_sidebar()
 renderizar_explorador_rag()
 
 data_ativa = st.session_state.data_referencia_ativa
-_, db_msg = st.session_state.db_status
-meteo_ativa = st.session_state.get("meteorologia_ativa", {})
-meteo_desc = meteo_ativa.get("descricao", "N/A")
-meteo_fonte = meteo_ativa.get("fonte", "")
-
-st.info(
-    f"📅 **Data Operacional:** `{data_ativa.strftime('%d/%m/%Y')}` "
-    f"&nbsp;|&nbsp; 🌦️ **Meteorologia ({meteo_fonte}):** `{meteo_desc}` "
-    f"&nbsp;|&nbsp; 🗄️ **Base de Dados (SQLite):** {db_msg}"
-)
+st.info(f"📅 **Data Operacional:** `{data_ativa.strftime('%d/%m/%Y')}`")
 
 # ==============================================================================
 # ABAS PRINCIPAIS

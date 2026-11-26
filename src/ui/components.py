@@ -1,8 +1,20 @@
+import html
+
 import altair as alt
 import pandas as pd
 import streamlit as st
 
 from src.ui.styles import CORES_DECISAO
+
+
+def formatar_meteo_rotulo(meteo: dict | None) -> tuple[str, str]:
+    """Devolve (tipo_label, descricao_pt) para exibir no Bloco Azul e na Sidebar."""
+    if not meteo:
+        return "Real", "N/A"
+    fonte = str(meteo.get("fonte", ""))
+    desc = str(meteo.get("descricao", "N/A")).replace(".", ",")
+    tipo = "Simulada" if "Simula" in fonte else "Real"
+    return tipo, desc
 
 
 @st.dialog("🧠 Cadeia de Decisão dos Agentes", width="large")
@@ -20,9 +32,6 @@ def mostrar_popup_agentes(lote_id: str) -> None:
     st.markdown(f"### {item['produto_id']} ({item['lote_id']}) — {item['nome']}")
     st.caption(f"Validade: {item['dias']}d | {badge_risco} | Resultado: {item['preco_final']} [{badge_csp}]")
 
-    # ==========================================================================
-    # BLOCO VISUAL DO RAG (EVIDÊNCIAS RECUPERADAS)
-    # ==========================================================================
     evidencias_rag = item.get("contexto_rag", [])
     with st.expander(f"📚 Contexto Recuperado via RAG ({len(evidencias_rag)} evidências)", expanded=True):
         if evidencias_rag:
@@ -50,25 +59,13 @@ def mostrar_popup_agentes(lote_id: str) -> None:
             st.warning(f"Intervenção CSP: {erro}")
         st.markdown(f"**Resultado Corrigido:** Desconto **{item['desconto_final']}** ({item['preco_final']}) | Destino: **{item['destino_final']}**.")
 
-def _formatar_delta(atual: float, base: float, sufixo: str = "", casas: int = 0) -> str:
-    diff = atual - base
-    if abs(diff) < 1e-6:
-        return '<span style="color:#64748b;font-weight:600;">(= igual ao início)</span>'
-    sinal = "+" if diff > 0 else ""
-    cor = "#059669" if diff > 0 else "#dc2626"
-    val_fmt = f"{diff:.{casas}f}".replace(".", ",") if casas > 0 else f"{int(round(diff))}"
-    return f'<span style="color:{cor};font-weight:700;">({sinal}{val_fmt}{sufixo} vs. início)</span>'
 
-
-def renderizar_cartoes_kpi(kpis: dict, kpis_base: dict | None = None) -> None:
-    d_val = " " + _formatar_delta(kpis["pct_validade_curta"], kpis_base["pct_validade_curta"], " pp", casas=1) if kpis_base else ""
-    d_desc = " " + _formatar_delta(kpis["lotes_desc_val"], kpis_base["lotes_desc_val"]) if kpis_base else ""
-
+def renderizar_cartoes_kpi(kpis: dict) -> None:
     pct_val_str = f"{kpis['pct_validade_curta']:.1f}%".replace(".", ",")
     pct_camp_str = f"{kpis['pct_campanha']:.1f}%".replace(".", ",")
     total_lotes_str = f"{kpis['total_lotes']:,}".replace(",", ".")
 
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3 = st.columns(3)
     with c1:
         st.markdown(
             f'<div class="kpi-card"><div class="kpi-title">Lotes Ativos em Catálogo</div>'
@@ -80,7 +77,7 @@ def renderizar_cartoes_kpi(kpis: dict, kpis_base: dict | None = None) -> None:
         st.markdown(
             f'<div class="kpi-card"><div class="kpi-title">Validade 1 a 5 Dias</div>'
             f'<div class="kpi-value" style="color:#dc2626;">{pct_val_str}</div>'
-            f'<div class="kpi-sub">{kpis["prods_validade_curta"]} produtos{d_val}</div></div>',
+            f'<div class="kpi-sub">{kpis["prods_validade_curta"]} produtos</div></div>',
             unsafe_allow_html=True,
         )
     with c3:
@@ -90,16 +87,90 @@ def renderizar_cartoes_kpi(kpis: dict, kpis_base: dict | None = None) -> None:
             f'<div class="kpi-sub">{kpis["prods_campanha"]} produtos</div></div>',
             unsafe_allow_html=True,
         )
-    with c4:
-        st.markdown(
-            f'<div class="kpi-card"><div class="kpi-title">Lotes c/ Desc. Validade</div>'
-            f'<div class="kpi-value" style="color:#059669;">{kpis["lotes_desc_val"]}</div>'
-            f'<div class="kpi-sub">{kpis["ajustes_csp"]} ajustes CSP{d_desc}</div></div>',
-            unsafe_allow_html=True,
+
+
+def _ir_pagina_decisoes(novo_idx: int) -> None:
+    st.session_state["pagina_decisoes"] = novo_idx
+
+
+def _renderizar_tabela_resumo_html(colunas: list[str], linhas: list[list[str]]) -> None:
+    ths = "".join(
+        f'<th class="{"col-left" if i == 0 else "col-right"}">{html.escape(col)}</th>'
+        for i, col in enumerate(colunas)
+    )
+    trs = []
+    for linha in linhas:
+        tds = "".join(
+            f'<td class="{"col-left" if i == 0 else "col-right"}">{html.escape(str(val))}</td>'
+            for i, val in enumerate(linha)
         )
+        trs.append(f"<tr>{tds}</tr>")
+
+    tabela_html = (
+        f'<div class="resumo-quant-wrap"><table class="resumo-quant-table">'
+        f'<thead><tr>{ths}</tr></thead>'
+        f'<tbody>{"".join(trs)}</tbody>'
+        f'</table></div>'
+    )
+    st.markdown(tabela_html, unsafe_allow_html=True)
 
 
-def renderizar_analise_decisoes(snapshot: dict, snapshot_base: dict | None = None, chave_prefixo: str = "atual") -> None:
+def renderizar_analise_decisoes(historico: list[dict]) -> None:
+    if not historico:
+        return
+
+    total_paginas = len(historico)
+    idx_atual = st.session_state.get("pagina_decisoes", total_paginas - 1)
+    idx_atual = max(0, min(idx_atual, total_paginas - 1))
+    st.session_state["pagina_decisoes"] = idx_atual
+
+    snapshot = historico[idx_atual]
+    snap_anterior = historico[idx_atual - 1] if idx_atual > 0 else None
+    chave_prefixo = f"pag_{idx_atual}_{total_paginas}"
+
+    # 1. Bloco Azul Contextual da Página Ativa (sem SQLite)
+    meteo_tipo, meteo_desc = formatar_meteo_rotulo(snapshot.get("meteorologia"))
+    if idx_atual == 0:
+        titulo_bloco = f"📌 **Início de Sessão:** `{snapshot.get('cenario', 'Nenhuma (Operação Normal)')}`"
+    else:
+        desc_pert = snapshot.get("descricao_perturbacao") or snapshot.get("cenario", "")
+        titulo_bloco = f"⚡ **Perturbação #{idx_atual} – {desc_pert}**"
+
+    st.info(
+        f"{titulo_bloco} "
+        f"&nbsp;|&nbsp; 📅 **Data Operacional:** `{snapshot['data_str']}` às `{snapshot['hora']}` "
+        f"&nbsp;|&nbsp; 🌦️ **Meteorologia ({meteo_tipo}):** `{meteo_desc}`"
+    )
+
+    # 2. Navegação por Setas (só aparece após a 1.ª perturbação; cinzenta nas extremidades)
+    if total_paginas > 1:
+        c_prev, c_mid, c_next = st.columns([2.2, 1.6, 2.2], vertical_alignment="center")
+        with c_prev:
+            st.button(
+                "⬅️ Resultados da Perturbação Anterior",
+                key="btn_dec_anterior",
+                disabled=(idx_atual <= 0),
+                width="stretch",
+                on_click=_ir_pagina_decisoes,
+                args=(max(0, idx_atual - 1),),
+            )
+        with c_mid:
+            rotulo_pag = "Início de Sessão" if idx_atual == 0 else f"Perturbação #{idx_atual}"
+            st.markdown(
+                f'<div style="text-align:center;font-weight:700;font-size:13px;opacity:0.85;">'
+                f'{rotulo_pag} ({idx_atual + 1}/{total_paginas})</div>',
+                unsafe_allow_html=True,
+            )
+        with c_next:
+            st.button(
+                "Resultados da Perturbação Seguinte ➡️",
+                key="btn_dec_seguinte",
+                disabled=(idx_atual >= total_paginas - 1),
+                width="stretch",
+                on_click=_ir_pagina_decisoes,
+                args=(min(total_paginas - 1, idx_atual + 1),),
+            )
+
     df_dec = pd.DataFrame(snapshot["registos_decisao"])
     df_filt = df_dec[df_dec["Dias"] <= 5]
     if df_filt.empty:
@@ -109,11 +180,11 @@ def renderizar_analise_decisoes(snapshot: dict, snapshot_base: dict | None = Non
     contagem = df_filt["Decisão"].value_counts().reset_index()
     contagem.columns = ["Decisão", "Lotes"]
     total_lotes_filt = int(contagem["Lotes"].sum())
-    contagem["Percentagem"] = contagem["Lotes"].apply(
+    contagem["%"] = contagem["Lotes"].apply(
         lambda x: f"{(x / max(1, total_lotes_filt)) * 100:.1f}%".replace(".", ",")
     )
 
-    col_bar, col_tab = st.columns([3, 2], gap="large")
+    col_bar, col_tab = st.columns([2.6, 2.4], gap="large")
     with col_bar:
         st.markdown("**📊 Quantificação das Decisões dos Agentes por Destino (n.º de lotes)**")
         max_lotes = int(contagem["Lotes"].max()) if not contagem.empty else 10
@@ -124,7 +195,7 @@ def renderizar_analise_decisoes(snapshot: dict, snapshot_base: dict | None = Non
                 title="Nº de Lotes",
                 scale=alt.Scale(domain=[0, max(10, int(max_lotes * 1.15))]),
             ),
-            tooltip=["Decisão:N", "Lotes:Q", "Percentagem:N"],
+            tooltip=["Decisão:N", "Lotes:Q", "%:N"],
         )
         barras = base_bar.mark_bar(cornerRadiusEnd=5, height=24).encode(
             color=alt.Color(
@@ -144,17 +215,39 @@ def renderizar_analise_decisoes(snapshot: dict, snapshot_base: dict | None = Non
 
     with col_tab:
         st.markdown("**📋 Resumo Quantitativo**")
-        df_resumo = contagem[["Decisão", "Lotes", "Percentagem"]].copy()
-        if snapshot_base is not None:
-            df_b = pd.DataFrame(snapshot_base["registos_decisao"])
-            df_b = df_b[df_b["Dias"] <= 5]
-            mapa_base = df_b["Decisão"].value_counts().to_dict()
-            df_resumo["Início"] = df_resumo["Decisão"].map(lambda d: int(mapa_base.get(d, 0)))
-            df_resumo["Δ"] = (df_resumo["Lotes"] - df_resumo["Início"]).apply(
-                lambda v: f"+{v}" if v > 0 else str(v)
+        mapa_atual = dict(zip(contagem["Decisão"], contagem["Lotes"]))
+
+        if snap_anterior is None:
+            colunas_tab = ["Decisão", "%", "Lotes (Início Sessão)"]
+            linhas_tab = [
+                [row["Decisão"], row["%"], str(int(row["Lotes"]))]
+                for _, row in contagem.iterrows()
+            ]
+        else:
+            df_prev = pd.DataFrame(snap_anterior["registos_decisao"])
+            df_prev = df_prev[df_prev["Dias"] <= 5]
+            mapa_prev = df_prev["Decisão"].value_counts().to_dict()
+
+            todas_dec = sorted(
+                set(mapa_atual.keys()) | set(mapa_prev.keys()),
+                key=lambda d: (mapa_atual.get(d, 0), mapa_prev.get(d, 0)),
+                reverse=True,
             )
-            df_resumo = df_resumo[["Decisão", "Início", "Lotes", "Δ", "Percentagem"]]
-        st.dataframe(df_resumo, hide_index=True, width="stretch")
+
+            col_prev = "Lotes (Início Sessão)" if idx_atual == 1 else f"Perturbação #{idx_atual - 1}"
+            col_atual = f"Perturbação #{idx_atual}"
+            colunas_tab = ["Decisão", "%", col_prev, col_atual, "Δ"]
+
+            linhas_tab = []
+            for dec in todas_dec:
+                v_atual = int(mapa_atual.get(dec, 0))
+                v_prev = int(mapa_prev.get(dec, 0))
+                diff = v_atual - v_prev
+                pct_str = f"{(v_atual / max(1, total_lotes_filt)) * 100:.1f}%".replace(".", ",")
+                diff_str = f"+{diff}" if diff > 0 else str(diff)
+                linhas_tab.append([dec, pct_str, str(v_prev), str(v_atual), diff_str])
+
+        _renderizar_tabela_resumo_html(colunas_tab, linhas_tab)
 
     st.markdown("**📊 Distribuição das Decisões por Categoria (%)**")
     decisoes_presentes = set(df_filt["Decisão"])

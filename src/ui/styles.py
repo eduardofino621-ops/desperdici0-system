@@ -241,6 +241,53 @@ def injetar_css_global() -> None:
             border-radius: 4px;
             border: 1px solid #6ee7b7;
         }
+        .st-key-btn_repor_dia button {
+            background-color: rgba(28, 131, 225, 0.18) !important;
+            border: 1px solid rgba(61, 157, 243, 0.45) !important;
+            color: inherit !important;
+            font-weight: 600 !important;
+        }
+        .st-key-btn_repor_dia button:hover {
+            background-color: rgba(28, 131, 225, 0.30) !important;
+            border-color: rgba(61, 157, 243, 0.75) !important;
+        }
+        .resumo-quant-wrap {
+            border: 1px solid rgba(128, 128, 128, 0.28);
+            border-radius: 8px;
+            overflow-x: auto;
+            background: var(--background-color);
+        }
+        .resumo-quant-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13.5px;
+        }
+        .resumo-quant-table th {
+            background: var(--secondary-background-color);
+            color: var(--text-color);
+            font-weight: 600;
+            padding: 9px 11px;
+            border-bottom: 1px solid rgba(128, 128, 128, 0.28);
+            white-space: nowrap;
+        }
+        .resumo-quant-table td {
+            padding: 8px 11px;
+            border-bottom: 1px solid rgba(128, 128, 128, 0.16);
+            color: var(--text-color);
+        }
+        .resumo-quant-table tr:last-child td {
+            border-bottom: none;
+        }
+        .resumo-quant-table th.col-left,
+        .resumo-quant-table td.col-left {
+            text-align: left;
+        }
+        .resumo-quant-table th.col-right,
+        .resumo-quant-table td.col-right {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+        }
     </style>
     """, unsafe_allow_html=True)
 

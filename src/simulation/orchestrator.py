@@ -520,6 +520,8 @@ def correr_simulacao(
         "cenario": cenario_perturbacao,
         "hora": datetime.now().strftime("%H:%M"),
         "data_str": data_ref.strftime("%d/%m/%Y"),
+        "meteorologia": meteo,
+        "perturbacoes_ativas": list(perturbacoes_ativas),
         "kpis": {
             "total_prods": total_prods,
             "total_lotes": len(lotes_copia),

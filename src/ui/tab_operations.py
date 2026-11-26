@@ -7,7 +7,6 @@ from src.rag.retriever import RecuperadorRAG
 from src.simulation.orchestrator import (
     DESTINOS_NAO_DESPERDICIO,
     _formatar_delta_pt,
-    formatar_eur,
     formatar_numero_pt,
     simular_horizonte_temporal,
 )
@@ -198,58 +197,17 @@ def _renderizar_tabela_operacoes() -> None:
 def renderizar_aba_operacoes() -> None:
     historico = st.session_state.get("historico_sessao", [])
     if historico:
-        snap_inicial = historico[0]
-        st.markdown(
-            f"📌 **Início de Sessão:** `{snap_inicial['cenario']}` às **{snap_inicial['hora']}** do dia **{snap_inicial['data_str']}**"
-        )
-        renderizar_cartoes_kpi(snap_inicial["kpis"])
+        renderizar_cartoes_kpi(historico[0]["kpis"])
 
-        snap_atual = historico[-1]
         st.markdown("<br>", unsafe_allow_html=True)
         with st.expander(
             "📊 Quantificação das Decisões dos Agentes (Lotes com Validade ≤ 5 dias) & Gráficos por Categoria",
             expanded=True,
         ):
-            renderizar_analise_decisoes(
-                snapshot=snap_atual,
-                snapshot_base=snap_inicial if len(historico) > 1 else None,
-                chave_prefixo=f"snap_{len(historico)}",
-            )
+            renderizar_analise_decisoes(historico)
 
     st.markdown("<br>", unsafe_allow_html=True)
     _renderizar_tabela_operacoes()
-
-
-def renderizar_historico_perturbacoes_sidebar() -> None:
-    historico = st.session_state.get("historico_sessao", [])
-    if len(historico) <= 1:
-        return
-
-    snap_inicial = historico[0]
-    perturbs = [s for s in historico[1:] if s["cenario"] != "Nenhuma (Operação Normal)"]
-    if not perturbs:
-        return
-
-    k_base = snap_inicial["kpis"]
-    linhas_hist = []
-    for idx_h, snap in enumerate(perturbs, start=1):
-        k = snap["kpis"]
-        diff_lotes = k["lotes_desc_val"] - k_base["lotes_desc_val"]
-        diff_csp = k["ajustes_csp"] - k_base["ajustes_csp"]
-        linhas_hist.append({
-            "#": f"#{idx_h}",
-            "Hora": snap["hora"],
-            "Perturbação": snap["cenario"],
-            "Lotes Desc.": f"{k['lotes_desc_val']} ({diff_lotes:+d})" if diff_lotes != 0 else f"{k['lotes_desc_val']} (=)",
-            "CSP": f"{k['ajustes_csp']} ({diff_csp:+d})" if diff_csp != 0 else f"{k['ajustes_csp']} (=)",
-        })
-
-    with st.sidebar.expander(f"⚡ Histórico de Perturbações ({len(linhas_hist)})", expanded=False):
-        st.dataframe(
-            pd.DataFrame(linhas_hist),
-            hide_index=True,
-            width="stretch",
-        )
 
 
 def renderizar_explorador_rag() -> None:
@@ -373,11 +331,7 @@ def renderizar_resultados_acelerada() -> None:
             reducao_desp_pct = (reducao_desp_un / max(1.0, base["total_desperdicadas"])) * 100
             poupanca_custo = base["custo_desperdicio"] - res["custo_desperdicio"]
             dif_receita = res["receita_total"] - base["receita_total"]
-            enc_lidl = base.get(
-                "total_encaminhadas_total",
-                base.get("total_doadas_cozinha", 0.0) + base.get("total_racao_valorizacao", 0.0),
-            )
-            dif_enc = res["total_doadas_cozinha"] - enc_lidl
+
             enc_lidl = base.get(
                 "total_encaminhadas_total",
                 base.get("total_doadas_cozinha", 0.0) + base.get("total_racao_valorizacao", 0.0),

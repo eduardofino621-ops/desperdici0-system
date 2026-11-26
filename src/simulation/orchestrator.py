@@ -22,6 +22,12 @@ MAPA_DESTINOS = {
     "racao_animal": "Doação Externa (Parceria com Produção de Ração Animal)",
 }
 
+DESTINOS_NAO_DESPERDICIO = [
+    "Vendido (Desconto/Saco)",
+    "Doação / Cozinha",
+    "Ração / Valorização",
+]
+
 
 def _normalizar_categoria(categoria: str | None) -> str:
     cat = (categoria or "outros").strip().lower()
@@ -32,6 +38,19 @@ def _normalizar_categoria(categoria: str | None) -> str:
     if cat in ["laticínios", "laticinios"]:
         return "laticinios"
     return cat
+
+
+def _registar_salvamento_categoria(
+    mapa: dict[str, dict[str, float]],
+    cat_nome: str,
+    destino_col: str,
+    qtd: float,
+) -> None:
+    if qtd <= 0:
+        return
+    c = _normalizar_categoria(cat_nome).capitalize()
+    mapa.setdefault(c, {d: 0.0 for d in DESTINOS_NAO_DESPERDICIO})
+    mapa[c][destino_col] = round(mapa[c].get(destino_col, 0.0) + float(qtd), 1)
 
 
 def formatar_eur(valor: float) -> str:
@@ -88,6 +107,7 @@ def obter_lotes_ativos_fefo(produto_id: str, lotes_por_prod: dict[str, list[dict
     elegiveis.sort(key=lambda x: (x.get("dias_para_expirar", 99), x.get("data_validade", "9999-12-31")))
     return elegiveis
 
+
 def calcular_max_sacos_padaria(
     catalogo_map: dict[str, dict],
     peso_alvo_kg: float = 0.50,
@@ -101,6 +121,7 @@ def calcular_max_sacos_padaria(
     if peso_max_sacos_kg < peso_alvo_kg:
         return 0
     return int(math.floor(peso_max_sacos_kg / max(0.01, peso_alvo_kg)))
+
 
 def construir_sacos_surpresa_equilibrados(
     lotes: list[dict],
@@ -469,11 +490,6 @@ def _simular_baseline_lidl(
     lotes_iniciais: list[dict],
     plano_dias: list[dict],
 ) -> dict:
-    """
-    Simula o modelo operacional de combate ao desperdício do Lidl Portugal com 'pescado':
-    - Apenas o que vai efetivamente para o lixo (expirado sem reaproveitamento) conta como desperdício real.
-    - Doação (Programa Realimenta / 'preferencia_antes') e ração animal / valorização não são desperdício.
-    """
     rng = random.Random(2026)
     catalogo_map = {}
     for p in catalogo_base:
@@ -495,6 +511,7 @@ def _simular_baseline_lidl(
     doacao_rede_emergencia_eur = 0.0
     custo_desperdicio = 0.0
     desperdicio_por_categoria: dict[str, float] = {}
+    salvamento_por_categoria: dict[str, dict[str, float]] = {}
 
     for dia_cfg in plano_dias:
         fator_dia = dia_cfg["fator_dia"]
@@ -553,7 +570,13 @@ def _simular_baseline_lidl(
             prod = catalogo_map[prod_id]
             cat = prod.get("categoria", "outros")
             peso_unit = 1.0 if prod.get("unidade_medida") == "kg" else float(prod.get("conteudo_liquido", 0.10))
-            elegiveis = obter_lotes_ativos_fefo(prod_id, lotes_por_prod)
+            # No baseline Lidl, os lotes marcados para desconto/saco não têm destino_final == "prateleira_desconto"
+            elegiveis = [
+                l for l in lotes_por_prod.get(prod_id, [])
+                if l.get("quantidade_disponivel", 0.0) > 0
+                and l.get("estado") not in ["esgotado", "expirado", "valorizado", "doado_realimenta"]
+            ]
+            elegiveis.sort(key=lambda x: (x.get("dias_para_expirar", 99), x.get("data_validade", "9999-12-31")))
             if not elegiveis:
                 continue
 
@@ -565,12 +588,13 @@ def _simular_baseline_lidl(
 
                 desc_ativo = max(lote.get("desconto_validade", 0.0), prod.get("desconto_campanha", 0.0))
                 elast = prod.get("elasticidade_preco", 1.2)
-                fator_janela = 0.85 if lote.get("destino_final") == "saco_padaria_5un_ate_12h" else 1.0
+                eh_saco_padaria = lote.get("destino_final") == "saco_padaria_5un_ate_12h"
+                fator_janela = 0.85 if eh_saco_padaria else 1.0
                 procura_lote = procura_base * (1.0 + desc_ativo * elast) * fator_janela
 
                 qtd_vendida = min(lote["quantidade_disponivel"], procura_lote)
                 if prod.get("unidade_medida") != "kg":
-                    if lote.get("destino_final") == "saco_padaria_5un_ate_12h" and qtd_vendida >= 5:
+                    if eh_saco_padaria and qtd_vendida >= 5:
                         qtd_vendida = float((int(qtd_vendida) // 5) * 5)
                     else:
                         qtd_vendida = float(int(round(qtd_vendida)))
@@ -579,7 +603,7 @@ def _simular_baseline_lidl(
                     lote["quantidade_disponivel"] = round(lote["quantidade_disponivel"] - qtd_vendida, 2)
                     valor_venda = qtd_vendida * lote.get("preco_final_atual", prod["pvp"])
 
-                    if lote.get("destino_final") == "saco_padaria_5un_ate_12h":
+                    if eh_saco_padaria:
                         contribuicao_social = valor_venda * 0.10
                         doacao_rede_emergencia_eur += contribuicao_social
                         receita_total += valor_venda - contribuicao_social
@@ -587,8 +611,11 @@ def _simular_baseline_lidl(
                         receita_total += valor_venda
 
                     total_vendidas += qtd_vendida
-                    if lote.get("desconto_validade", 0.0) > 0:
+                    if lote.get("desconto_validade", 0.0) > 0 or eh_saco_padaria:
                         qvd_kg += qtd_vendida * peso_unit
+                        _registar_salvamento_categoria(
+                            salvamento_por_categoria, cat, "Vendido (Desconto/Saco)", qtd_vendida
+                        )
 
                     denom = max(0.01, (1.0 + desc_ativo * elast) * fator_janela)
                     procura_base = max(0.0, procura_base - (qtd_vendida / denom))
@@ -610,11 +637,13 @@ def _simular_baseline_lidl(
                     qtd_doada = qtd_sobra
                     total_doadas_cozinha += qtd_doada
                     qd_kg += qtd_doada * peso_unit
+                    _registar_salvamento_categoria(
+                        salvamento_por_categoria, cat_raw, "Doação / Cozinha", qtd_doada
+                    )
                     lote["quantidade_disponivel"] = 0.0
                     lote["estado"] = "doado_realimenta"
                     continue
 
-                # Pescado e carne no limite 'consumir_ate' não têm doação direta no fecho
                 if cat_raw in ["fruta", "legumes", "laticinios"]:
                     taxa_realimenta = 0.75
                     qtd_doada = round(qtd_sobra * taxa_realimenta, 2)
@@ -625,12 +654,18 @@ def _simular_baseline_lidl(
                     if qtd_doada > 0:
                         total_doadas_cozinha += qtd_doada
                         qd_kg += qtd_doada * peso_unit
+                        _registar_salvamento_categoria(
+                            salvamento_por_categoria, cat_raw, "Doação / Cozinha", qtd_doada
+                        )
                 else:
                     qtd_restante = qtd_sobra
 
                 if qtd_restante > 0 and cat_raw in ["padaria", "pastelaria", "carne", "pescado", "laticinios"]:
                     total_racao_valorizacao += qtd_restante
                     qr_kg += qtd_restante * peso_unit
+                    _registar_salvamento_categoria(
+                        salvamento_por_categoria, cat_raw, "Ração / Valorização", qtd_restante
+                    )
                     lote["quantidade_disponivel"] = 0.0
                     lote["estado"] = "valorizado"
                 elif qtd_restante > 0:
@@ -653,12 +688,14 @@ def _simular_baseline_lidl(
         "total_vendidas": round(total_vendidas, 1),
         "total_doadas_cozinha": round(total_doadas_cozinha, 1),
         "total_racao_valorizacao": round(total_racao_valorizacao, 1),
+        "total_encaminhadas_total": round(total_doadas_cozinha + total_racao_valorizacao, 1),
         "total_desperdicadas": round(total_desperdicadas, 1),
         "receita_total": round(receita_total, 2),
         "doacao_rede_emergencia_eur": round(doacao_rede_emergencia_eur, 2),
         "custo_desperdicio": round(custo_desperdicio, 2),
         "qtar_kg": round(qtar_kg, 1),
         "desperdicio_por_categoria": desperdicio_por_categoria,
+        "salvamento_por_categoria": salvamento_por_categoria,
     }
 
 
@@ -700,6 +737,7 @@ def simular_horizonte_temporal(
 
     evolucao_diaria = []
     desperdicio_por_categoria: dict[str, float] = {}
+    salvamento_por_categoria: dict[str, dict[str, float]] = {}
     custo_desperdicio_total = 0.0
     receita_total_recuperada = 0.0
     total_un_vendidas = 0.0
@@ -802,7 +840,6 @@ def simular_horizonte_temporal(
             if not elegiveis:
                 continue
 
-            # Ajuste sazonal em pescado/carne quando há feriado ou calor
             fator_cat = 1.15 if (cat in ["pescado", "carne"] and feriado_amanha) else 1.0
             procura_base = prod.get("vendas_medias_diarias", 2.0) * fator_dia * fator_cat * rng.uniform(0.85, 1.15)
 
@@ -822,8 +859,12 @@ def simular_horizonte_temporal(
                     vendidas_dia += qtd_vendida
                     if lote.get("desconto_validade", 0.0) > 0:
                         qvd_kg_total += qtd_vendida * peso_unit
+                        _registar_salvamento_categoria(
+                            salvamento_por_categoria, cat, "Vendido (Desconto/Saco)", qtd_vendida
+                        )
                     procura_base = max(0.0, procura_base - (qtd_vendida / (1.0 + desc_ativo * elast)))
 
+        lotes_by_id = {l["lote_id"]: l for l in lotes_ativos}
         sacos_dia = construir_sacos_surpresa_equilibrados(lotes_ativos, catalogo_map, peso_alvo_kg=0.50)
         taxa_venda_sacos = 0.65 if quebra_clientes else 0.90
         for saco in sacos_dia:
@@ -831,11 +872,16 @@ def simular_horizonte_temporal(
                 receita_dia += saco["preco_final"]
                 qvd_kg_total += saco["peso_kg"]
                 for lid, q_cons in saco["lotes_consumo"].items():
-                    for l in lotes_ativos:
-                        if l["lote_id"] == lid:
-                            abat = min(l["quantidade_disponivel"], q_cons)
+                    l = lotes_by_id.get(lid)
+                    if l is not None:
+                        abat = min(l["quantidade_disponivel"], q_cons)
+                        if abat > 0:
                             l["quantidade_disponivel"] = round(l["quantidade_disponivel"] - abat, 2)
                             vendidas_dia += abat
+                            cat_saco = catalogo_map.get(l["produto_id"], {}).get("categoria", "padaria")
+                            _registar_salvamento_categoria(
+                                salvamento_por_categoria, cat_saco, "Vendido (Desconto/Saco)", abat
+                            )
 
         for lote in lotes_ativos:
             if lote["quantidade_disponivel"] <= 0 or lote.get("estado") in ["expirado", "encaminhado", "lixo"]:
@@ -848,10 +894,16 @@ def simular_horizonte_temporal(
                 qtd_enc = lote["quantidade_disponivel"]
                 kg_lote = qtd_enc * peso_unit
 
-                if dest == "doacao_externa":
+                if dest in ["doacao_externa", "cozinha_interna"]:
                     qd_kg_total += kg_lote
+                    _registar_salvamento_categoria(
+                        salvamento_por_categoria, prod.get("categoria", "outros"), "Doação / Cozinha", qtd_enc
+                    )
                 else:
                     qr_kg_total += kg_lote
+                    _registar_salvamento_categoria(
+                        salvamento_por_categoria, prod.get("categoria", "outros"), "Ração / Valorização", qtd_enc
+                    )
 
                 doadas_dia += qtd_enc
                 lote["quantidade_disponivel"] = 0.0
@@ -931,5 +983,6 @@ def simular_horizonte_temporal(
         "ts_pct": round(ts_pct, 2),
         "evolucao_diaria": evolucao_diaria,
         "desperdicio_por_categoria": desperdicio_por_categoria,
+        "salvamento_por_categoria": salvamento_por_categoria,
         "comparacao_baseline": baseline,
     }

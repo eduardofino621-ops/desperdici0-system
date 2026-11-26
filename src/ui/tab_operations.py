@@ -4,7 +4,13 @@ import streamlit as st
 import altair as alt
 
 from src.rag.retriever import RecuperadorRAG
-from src.simulation.orchestrator import formatar_eur, formatar_numero_pt, _formatar_delta_pt, simular_horizonte_temporal
+from src.simulation.orchestrator import (
+    DESTINOS_NAO_DESPERDICIO,
+    _formatar_delta_pt,
+    formatar_eur,
+    formatar_numero_pt,
+    simular_horizonte_temporal,
+)
 from src.ui.components import (
     mostrar_popup_agentes,
     renderizar_analise_decisoes,
@@ -297,24 +303,8 @@ def renderizar_resultados_multidia() -> None:
         f"⏩ Resultados da Simulação Acelerada Multi-Dia ({res['dias_simulados']} dias)",
         expanded=True,
     ):
-        if res.get("passos_execucao"):
-            st.markdown("### 🧭 Passo a Passo da Execução Multi-Dia")
-            for p in res.get("passos_execucao", []):
-                exp_txt = (
-                    f" — *Expirados:* {', '.join(p['exemplos_expirados'])}"
-                    if p["exemplos_expirados"]
-                    else " — *Zero desperdício neste dia*"
-                )
-                st.markdown(
-                    f"**Passo {p['dia_num']} (`{p['data_str']}`)** | 🌦️ `{p['clima']}` | ⚡ `{p['cenario']}` *(Procura: {int(p['fator_procura'] * 100)}%)*\n"
-                    f"1. **Agentes + CSP:** Avaliaram **{formatar_numero_pt(p['lotes_analisados_agentes'], 0)}** lotes críticos (≤ 5 dias) e montaram **{p['sacos_criados']}** Sacos Surpresa.\n"
-                    f"2. **Vendas FEFO & Logística:** Escoadas **{formatar_numero_pt(p['vendidas'], 0)}** un/kg em loja (`{formatar_numero_pt(p['receita'], 2)}€`) e **{formatar_numero_pt(p['doadas'], 0)}** un/kg encaminhadas para Doação/Cozinha.\n"
-                    f"3. **Fecho de Validades:** **{formatar_numero_pt(p['desperdicadas'], 0)}** un/kg expiraram sem compra{exp_txt}."
-                )
-            st.divider()
-
-        # 1. Métricas do horizonte SEM setas (apenas contexto descritivo)
-        st.markdown("### 📊 Visualização do Horizonte")
+        # 1. Métricas globais do horizonte (Desperdíci0%)
+        st.markdown("### 📊 Desempenho Global do Horizonte (Desperdíci0%)")
         ts_val = res.get("ts_pct", 0.0)
         atingiu_meta = ts_val > 90.0
         estado_meta = "✅ Meta atingida (> 90%)" if atingiu_meta else "⚠️ Abaixo da meta (≤ 90%)"
@@ -324,34 +314,34 @@ def renderizar_resultados_multidia() -> None:
             st.metric("Taxa de Salvamento (TS)", f"{formatar_numero_pt(ts_val, 1)}%")
             st.caption(estado_meta)
         with m2:
-            st.metric("Total Vendido (Unid. / Kg)", formatar_numero_pt(res["total_vendidas"], 0))
-            st.caption(f"Faturação bruta: {formatar_numero_pt(res['receita_total'], 2)}€")
+            st.metric("Total Vendido", f"{formatar_numero_pt(res['total_vendidas'], 0)} un/kg")
+            st.caption(f"Receita: {formatar_numero_pt(res['receita_total'], 2)}€")
         with m3:
-            st.metric("Escoado p/ Doação / Reaproveit.", formatar_numero_pt(res["total_doadas_cozinha"], 0))
+            st.metric("Doação / Reaproveit.", f"{formatar_numero_pt(res['total_doadas_cozinha'], 0)} un/kg")
             st.caption(
-                f"Doado (QD): {formatar_numero_pt(res.get('qd_kg', 0.0), 1)} kg · "
-                f"Cozinha/Ração (QR): {formatar_numero_pt(res.get('qr_kg', 0.0), 1)} kg"
+                f"QD: {formatar_numero_pt(res.get('qd_kg', 0.0), 1)} kg · "
+                f"QR: {formatar_numero_pt(res.get('qr_kg', 0.0), 1)} kg"
             )
         with m4:
-            st.metric("Desperdício Final (Expirados)", formatar_numero_pt(res["total_desperdicadas"], 0))
-            st.caption(f"Custo perda (compra+lixo): {formatar_numero_pt(res['custo_desperdicio'], 2)}€")
+            st.metric("Desperdício (Lixo)", f"{formatar_numero_pt(res['total_desperdicadas'], 0)} un/kg")
+            st.caption(f"Custo perda: {formatar_numero_pt(res['custo_desperdicio'], 2)}€")
         with m5:
             st.metric("Taxa de Desperdício", f"{formatar_numero_pt(res['taxa_desperdicio_pct'], 1)}%")
-            st.caption(f"Expirado / total ({res['dias_simulados']} dias)")
+            st.caption(f"Horizonte: {res['dias_simulados']} dias")
 
         st.caption(
-            f"📐 **Fórmula TS = ((QVD + QD + QR) / QTAR) × 100:** "
+            f"📐 **TS = ((QVD + QD + QR) / QTAR) × 100:** "
             f"**QVD** (Vendidos c/ desconto) = `{formatar_numero_pt(res.get('qvd_kg', 0.0), 1)} kg` · "
-            f"**QD** (Doados a instituições) = `{formatar_numero_pt(res.get('qd_kg', 0.0), 1)} kg` · "
-            f"**QR** (Reaproveitados em cozinha/ração) = `{formatar_numero_pt(res.get('qr_kg', 0.0), 1)} kg` · "
-            f"**QTAR** (Total de alimentos em risco) = `{formatar_numero_pt(res.get('qtar_kg', 0.0), 1)} kg`"
+            f"**QD** (Doação / Cozinha) = `{formatar_numero_pt(res.get('qd_kg', 0.0), 1)} kg` · "
+            f"**QR** (Ração / Valorização) = `{formatar_numero_pt(res.get('qr_kg', 0.0), 1)} kg` · "
+            f"**QTAR** (Total em risco) = `{formatar_numero_pt(res.get('qtar_kg', 0.0), 1)} kg`"
         )
 
         df_evo = pd.DataFrame(res["evolucao_diaria"]).copy()
         for col_num, casas in [
             ("Vendidas", 1),
             ("Doação / Cozinha", 1),
-            ("Desperdiçadas (Expiradas)", 1),
+            ("Desperdício (Lixo)", 1),
             ("Receita (€)", 2),
         ]:
             if col_num in df_evo.columns:
@@ -359,20 +349,23 @@ def renderizar_resultados_multidia() -> None:
 
         st.dataframe(df_evo, hide_index=True, width="stretch")
 
-        # 2. Comparação Direta: Desperdíci0% vs. Modelo Lidl
+        # 2. Comparação Direta: Desperdíci0% vs. Lidl
         base = res.get("comparacao_baseline")
         if base:
             st.divider()
-            st.markdown("### ⚖️ Impacto Real: Desperdíci0% vs. Modelo Lidl")
-            st.caption(
-                "Mesmos 200 produtos, 500 lotes iniciais e perturbações diárias."
-            )
+            st.markdown("### ⚖️ Comparação Direta: Desperdíci0% vs. Lidl")
+            st.caption("Mesmo catálogo (200 produtos), mesmos 500 lotes iniciais e mesmas perturbações diárias.")
 
             ganho_ts = res["ts_pct"] - base["ts_pct"]
             reducao_desp_un = base["total_desperdicadas"] - res["total_desperdicadas"]
             reducao_desp_pct = (reducao_desp_un / max(1.0, base["total_desperdicadas"])) * 100
             poupanca_custo = base["custo_desperdicio"] - res["custo_desperdicio"]
             dif_receita = res["receita_total"] - base["receita_total"]
+            enc_lidl = base.get(
+                "total_encaminhadas_total",
+                base.get("total_doadas_cozinha", 0.0) + base.get("total_racao_valorizacao", 0.0),
+            )
+            dif_enc = res["total_doadas_cozinha"] - enc_lidl
 
             k1, k2, k3, k4 = st.columns(4)
             k1.metric(
@@ -382,21 +375,21 @@ def renderizar_resultados_multidia() -> None:
                 delta_color="normal" if ganho_ts >= 0 else "inverse",
             )
             k2.metric(
-                "Desperdício Evitado (vs. Lidl)",
+                "Desperdício Evitado",
                 f"{formatar_numero_pt(reducao_desp_un, 0)} un/kg",
-                delta=f"+{formatar_numero_pt(reducao_desp_un, 0)} salvos (-{formatar_numero_pt(reducao_desp_pct, 1)}% vs. {formatar_numero_pt(base['total_desperdicadas'], 0)})",
-                delta_color="normal",
+                delta=f"{_formatar_delta_pt(-reducao_desp_un, ' un/kg', 0)} ({_formatar_delta_pt(-reducao_desp_pct, '%', 1)})",
+                delta_color="normal" if reducao_desp_un >= 0 else "inverse",
             )
             k3.metric(
                 "Custo de Perdas Evitado",
                 f"{formatar_numero_pt(poupanca_custo, 2)}€",
-                delta=f"-{formatar_numero_pt(poupanca_custo, 2)}€ de custo ({formatar_numero_pt(base['custo_desperdicio'], 2)}€ → {formatar_numero_pt(res['custo_desperdicio'], 2)}€)",
-                delta_color="inverse",
+                delta=f"{formatar_numero_pt(base['custo_desperdicio'], 2)}€ → {formatar_numero_pt(res['custo_desperdicio'], 2)}€",
+                delta_color="normal" if poupanca_custo >= 0 else "inverse",
             )
             k4.metric(
-                "Variação de Receita (vs. Lidl)",
+                "Variação de Receita",
                 _formatar_delta_pt(dif_receita, "€", 2),
-                delta=_formatar_delta_pt(dif_receita, "€ vs. Lidl", 2),
+                delta=f"Lidl: {formatar_numero_pt(base['receita_total'], 2)}€ → Desperdíci0%: {formatar_numero_pt(res['receita_total'], 2)}€",
                 delta_color="normal",
             )
 
@@ -404,70 +397,90 @@ def renderizar_resultados_multidia() -> None:
                 {
                     "Indicador": "Taxa de Salvamento (TS)",
                     "Lidl": f"{formatar_numero_pt(base['ts_pct'], 1)}%",
-                    "Desperdíci0% (Multi-Agente + CSP)": f"{formatar_numero_pt(res['ts_pct'], 1)}%",
-                    "Diferença Real": _formatar_delta_pt(ganho_ts, " p.p.", 1),
+                    "Desperdíci0%": f"{formatar_numero_pt(res['ts_pct'], 1)}%",
+                    "Diferença (Desperdíci0% vs. Lidl)": _formatar_delta_pt(ganho_ts, " p.p.", 1),
                 },
                 {
                     "Indicador": "Taxa de Desperdício Global",
                     "Lidl": f"{formatar_numero_pt(base['taxa_desperdicio_pct'], 1)}%",
-                    "Desperdíci0% (Multi-Agente + CSP)": f"{formatar_numero_pt(res['taxa_desperdicio_pct'], 1)}%",
-                    "Diferença Real": _formatar_delta_pt(res["taxa_desperdicio_pct"] - base["taxa_desperdicio_pct"], " p.p.", 1),
+                    "Desperdíci0%": f"{formatar_numero_pt(res['taxa_desperdicio_pct'], 1)}%",
+                    "Diferença (Desperdíci0% vs. Lidl)": _formatar_delta_pt(
+                        res["taxa_desperdicio_pct"] - base["taxa_desperdicio_pct"], " p.p.", 1
+                    ),
                 },
                 {
-                    "Indicador": "Alimentos Desperdiçados (Expirados)",
+                    "Indicador": "Alimentos Desperdiçados (Lixo)",
                     "Lidl": f"{formatar_numero_pt(base['total_desperdicadas'], 0)} un/kg",
-                    "Desperdíci0% (Multi-Agente + CSP)": f"{formatar_numero_pt(res['total_desperdicadas'], 0)} un/kg",
-                    "Diferença Real": f"{_formatar_delta_pt(-reducao_desp_un, ' un/kg', 0)} (-{formatar_numero_pt(reducao_desp_pct, 1)}%)",
+                    "Desperdíci0%": f"{formatar_numero_pt(res['total_desperdicadas'], 0)} un/kg",
+                    "Diferença (Desperdíci0% vs. Lidl)": (
+                        f"{_formatar_delta_pt(-reducao_desp_un, ' un/kg', 0)} "
+                        f"({_formatar_delta_pt(-reducao_desp_pct, '%', 1)})"
+                    ),
                 },
                 {
                     "Indicador": "Encaminhado (Doação / Cozinha / Ração)",
-                    "Lidl": "0 un/kg",
-                    "Desperdíci0% (Multi-Agente + CSP)": f"{formatar_numero_pt(res['total_doadas_cozinha'], 0)} un/kg",
-                    "Diferença Real": _formatar_delta_pt(res["total_doadas_cozinha"], " un/kg", 0),
+                    "Lidl": f"{formatar_numero_pt(enc_lidl, 0)} un/kg",
+                    "Desperdíci0%": f"{formatar_numero_pt(res['total_doadas_cozinha'], 0)} un/kg",
+                    "Diferença (Desperdíci0% vs. Lidl)": _formatar_delta_pt(dif_enc, " un/kg", 0),
                 },
                 {
                     "Indicador": "Custo Direto de Desperdício (Aquisição + Descarte)",
                     "Lidl": f"{formatar_numero_pt(base['custo_desperdicio'], 2)}€",
-                    "Desperdíci0% (Multi-Agente + CSP)": f"{formatar_numero_pt(res['custo_desperdicio'], 2)}€",
-                    "Diferença Real": _formatar_delta_pt(-poupanca_custo, "€", 2),
+                    "Desperdíci0%": f"{formatar_numero_pt(res['custo_desperdicio'], 2)}€",
+                    "Diferença (Desperdíci0% vs. Lidl)": _formatar_delta_pt(-poupanca_custo, "€", 2),
                 },
                 {
                     "Indicador": "Receita Total de Vendas",
                     "Lidl": f"{formatar_numero_pt(base['receita_total'], 2)}€",
-                    "Desperdíci0% (Multi-Agente + CSP)": f"{formatar_numero_pt(res['receita_total'], 2)}€",
-                    "Diferença Real": _formatar_delta_pt(dif_receita, "€", 2),
+                    "Desperdíci0%": f"{formatar_numero_pt(res['receita_total'], 2)}€",
+                    "Diferença (Desperdíci0% vs. Lidl)": _formatar_delta_pt(dif_receita, "€", 2),
                 },
             ])
             st.dataframe(df_comp, hide_index=True, width="stretch")
 
-        # 3. Gráfico comparativo por categoria (duas barras lado a lado)
+        # 3. Análise Visual por Categoria (Desperdício vs. Destino do Não Desperdiçado)
         desp_nosso = res.get("desperdicio_por_categoria") or {}
         desp_trad = (res.get("comparacao_baseline") or {}).get("desperdicio_por_categoria") or {}
-        todas_cats = sorted(set(desp_nosso.keys()) | set(desp_trad.keys()))
+        salv_nosso = res.get("salvamento_por_categoria") or {}
+        salv_lidl = (res.get("comparacao_baseline") or {}).get("salvamento_por_categoria") or {}
+
+        todas_cats = sorted(
+            set(desp_nosso.keys()) | set(desp_trad.keys()) | set(salv_nosso.keys()) | set(salv_lidl.keys())
+        )
+
         if todas_cats:
-            st.markdown(
-                "**Desperdício acumulado por categoria — Lidl vs. Desperdíci0% (unidades/kg expirados):**")
+            st.divider()
+            st.markdown("### 📈 Análise por Categoria — Lidl vs. Desperdíci0%")
+
             ordem_cats = sorted(
                 todas_cats,
-                key=lambda c: max(float(desp_trad.get(c, 0.0)), float(desp_nosso.get(c, 0.0))),
+                key=lambda c: max(
+                    float(desp_trad.get(c, 0.0)),
+                    float(desp_nosso.get(c, 0.0)),
+                    sum(float(v) for v in (salv_lidl.get(c) or {}).values()),
+                    sum(float(v) for v in (salv_nosso.get(c) or {}).values()),
+                ),
                 reverse=True,
             )
-            dados_grafico = []
+
+            # Gráfico 1: Desperdício acumulado por categoria
+            st.markdown("**1. Desperdício acumulado por categoria (unidades/kg expirados):**")
+            dados_desp = []
             for cat in ordem_cats:
-                dados_grafico.append({
+                dados_desp.append({
                     "Categoria": cat,
                     "Modelo": "Lidl",
                     "Desperdício": float(desp_trad.get(cat, 0.0)),
                 })
-                dados_grafico.append({
+                dados_desp.append({
                     "Categoria": cat,
-                    "Modelo": "Desperdíci0% (Multi-Agente + CSP)",
+                    "Modelo": "Desperdíci0%",
                     "Desperdício": float(desp_nosso.get(cat, 0.0)),
                 })
 
-            df_graf = pd.DataFrame(dados_grafico)
-            grafico = (
-                alt.Chart(df_graf)
+            df_graf_desp = pd.DataFrame(dados_desp)
+            grafico_desp = (
+                alt.Chart(df_graf_desp)
                 .mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
                 .encode(
                     x=alt.X(
@@ -480,7 +493,7 @@ def renderizar_resultados_multidia() -> None:
                     color=alt.Color(
                         "Modelo:N",
                         scale=alt.Scale(
-                            domain=["Lidl", "Desperdíci0% (Multi-Agente + CSP)"],
+                            domain=["Lidl", "Desperdíci0%"],
                             range=["#64748b", "#0ea5e9"],
                         ),
                         legend=alt.Legend(title="Modelo de Gestão", orient="bottom"),
@@ -491,9 +504,64 @@ def renderizar_resultados_multidia() -> None:
                         alt.Tooltip("Desperdício:Q", title="Expirado (un/kg)", format=".1f"),
                     ],
                 )
-                .properties(height=340)
+                .properties(height=310)
             )
-            st.altair_chart(grafico, use_container_width=True)
+            st.altair_chart(grafico_desp, use_container_width=True)
+
+            # Gráfico 2: Destino do que não é desperdiçado (3 painéis com a mesma distinção visual)
+            st.markdown("**2. Destino do que não é desperdiçado por categoria (unidades/kg salvos):**")
+            cols_dest = st.columns(3)
+            for col_ui, dest_col in zip(cols_dest, DESTINOS_NAO_DESPERDICIO):
+                linhas_dest = []
+                for cat in ordem_cats:
+                    linhas_dest.append({
+                        "Categoria": cat,
+                        "Modelo": "Lidl",
+                        "Quantidade": float((salv_lidl.get(cat) or {}).get(dest_col, 0.0)),
+                    })
+                    linhas_dest.append({
+                        "Categoria": cat,
+                        "Modelo": "Desperdíci0%",
+                        "Quantidade": float((salv_nosso.get(cat) or {}).get(dest_col, 0.0)),
+                    })
+
+                df_dest = pd.DataFrame(linhas_dest)
+                with col_ui:
+                    st.caption(f"**{dest_col}**")
+                    graf_dest = (
+                        alt.Chart(df_dest)
+                        .mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
+                        .encode(
+                            x=alt.X(
+                                "Categoria:N",
+                                sort=ordem_cats,
+                                axis=alt.Axis(labelAngle=-35, labelLimit=100, title=None),
+                            ),
+                            xOffset=alt.XOffset("Modelo:N"),
+                            y=alt.Y(
+                                "Quantidade:Q",
+                                axis=alt.Axis(
+                                    title="Unidades / Kg" if dest_col == DESTINOS_NAO_DESPERDICIO[0] else None
+                                ),
+                            ),
+                            color=alt.Color(
+                                "Modelo:N",
+                                scale=alt.Scale(
+                                    domain=["Lidl", "Desperdíci0%"],
+                                    range=["#64748b", "#0ea5e9"],
+                                ),
+                                legend=alt.Legend(title="Modelo de Gestão", orient="bottom"),
+                            ),
+                            tooltip=[
+                                alt.Tooltip("Categoria:N", title="Categoria"),
+                                alt.Tooltip("Modelo:N", title="Modelo"),
+                                alt.Tooltip("Quantidade:Q", title=f"{dest_col} (un/kg)", format=".1f"),
+                            ],
+                        )
+                        .properties(height=280)
+                    )
+                    st.altair_chart(graf_dest, use_container_width=True)
+
 
 def renderizar_simulador_multidia_sidebar() -> None:
     with st.sidebar.expander("⏩ Simulação Acelerada Multi-Dia", expanded=False):

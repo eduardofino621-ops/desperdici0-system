@@ -1,3 +1,4 @@
+import html
 import pandas as pd
 from st_aggrid import AgGrid, ColumnsAutoSizeMode, GridOptionsBuilder, JsCode
 import streamlit as st
@@ -210,49 +211,123 @@ def renderizar_aba_operacoes() -> None:
     _renderizar_tabela_operacoes()
 
 
-def renderizar_explorador_rag() -> None:
-    with st.sidebar.expander("📚 Base de Conhecimento & Motor RAG", expanded=False):
-        rag = RecuperadorRAG()
-        total_regras = sum(1 for d in rag.documentos if not d["id"].startswith("Histórico "))
-        total_hist = len(rag.documentos) - total_regras
+_NOMES_CAT_RAG = {
+    "geral": "Geral (Todas as Categorias)",
+    "laticinios": "Laticínios",
+}
 
-        c1, c2 = st.columns(2)
-        c1.metric("Regras Fixas", total_regras)
-        c2.metric("Registos SQLite", total_hist)
 
+def _rotulo_categoria_rag(cat: str | None) -> str:
+    chave = (cat or "geral").strip().lower()
+    return _NOMES_CAT_RAG.get(chave, chave.capitalize())
+
+
+def _renderizar_secao_caderno_rag(titulo: str, classe_banner: str, docs: list[dict]) -> None:
+    if not docs:
+        return
+
+    st.markdown(
+        f'<div class="rag-origem-banner {classe_banner}">'
+        f'<span>{html.escape(titulo)}</span>'
+        f'<span class="rag-origem-count">{len(docs)} {"documento" if len(docs) == 1 else "documentos"}</span>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+    por_categoria: dict[str, list[dict]] = {}
+    for d in docs:
+        cat_key = (d.get("categoria") or "geral").strip().lower()
+        por_categoria.setdefault(cat_key, []).append(d)
+
+    # "geral" aparece primeiro; restantes categorias por ordem alfabética
+    cats_ordenadas = sorted(por_categoria.keys(), key=lambda c: (0 if c == "geral" else 1, c))
+
+    blocos_html = []
+    for cat_key in cats_ordenadas:
+        cat_label = _rotulo_categoria_rag(cat_key)
+        blocos_html.append(f'<div class="rag-cat-header">{html.escape(cat_label)}</div>')
+        for doc in por_categoria[cat_key]:
+            blocos_html.append(
+                f'<div class="rag-card">'
+                f'<div class="rag-card-title">{html.escape(doc["id"])}</div>'
+                f'<div class="rag-card-body">{html.escape(doc["texto"])}</div>'
+                f'</div>'
+            )
+
+    st.markdown(f'<div class="rag-notebook">{"".join(blocos_html)}</div>', unsafe_allow_html=True)
+
+
+@st.dialog("📖 Base de Conhecimento & Motor RAG", width="large")
+def _mostrar_popup_rag() -> None:
+    rag = RecuperadorRAG()
+    total_regras = sum(1 for d in rag.documentos if not d["id"].startswith("Histórico "))
+    total_hist = len(rag.documentos) - total_regras
+
+    f1, f2, f3 = st.columns([1.4, 1.1, 1.3])
+    with f1:
         filtro_origem = st.selectbox(
             "Origem do Conhecimento:",
-            ["Todas", "Regras de Negócio Indexadas", "Registos Históricos (SQLite)"],
-            key="rag_filtro_origem",
+            [
+                f"Todas ({len(rag.documentos)})",
+                f"📘 Regras de Negócio Indexadas ({total_regras})",
+                f"🗄️ Registos Históricos (SQLite) ({total_hist})",
+            ],
+            key="rag_popup_origem",
         )
-        categorias_disponiveis = ["Todas"] + sorted({
-            d.get("categoria", "geral").capitalize() for d in rag.documentos
-        })
-        filtro_cat = st.selectbox(
+    with f2:
+        cats_unicas = sorted(
+            {(d.get("categoria") or "geral").strip().lower() for d in rag.documentos},
+            key=lambda c: (0 if c == "geral" else 1, c),
+        )
+        mapa_cat_label = {"Todas": None, **{_rotulo_categoria_rag(c): c for c in cats_unicas}}
+        filtro_cat_label = st.selectbox(
             "Categoria:",
-            categorias_disponiveis,
-            key="rag_filtro_cat",
+            list(mapa_cat_label.keys()),
+            key="rag_popup_cat",
         )
+        filtro_cat = mapa_cat_label[filtro_cat_label]
+    with f3:
+        pesquisa_rag = st.text_input(
+            "🔎 Pesquisar termo:",
+            placeholder="Ex: chuva, padaria, salmão...",
+            key="rag_popup_search",
+        ).strip().lower()
 
-        docs_filtrados = []
-        for d in rag.documentos:
-            eh_sql = d["id"].startswith("Histórico ")
-            if filtro_origem == "Regras de Negócio Indexadas" and eh_sql:
-                continue
-            if filtro_origem == "Registos Históricos (SQLite)" and not eh_sql:
-                continue
-            if filtro_cat != "Todas" and d.get("categoria", "geral").lower() != filtro_cat.lower():
-                continue
-            docs_filtrados.append(d)
+    regras_filtradas = []
+    hist_filtrados = []
 
-        st.caption(f"A apresentar **{len(docs_filtrados)}** de **{len(rag.documentos)}** documentos.")
-        if docs_filtrados:
-            for d in docs_filtrados:
-                badge_origem = "🗄️ SQLite" if d["id"].startswith("Histórico ") else "📘 Regra"
-                cat_label = d.get("categoria", "geral").capitalize()
-                st.markdown(f"- {badge_origem} | **`{d['id']}`** *({cat_label})*: {d['texto']}")
+    for d in rag.documentos:
+        eh_sql = d["id"].startswith("Histórico ")
+        if filtro_origem.startswith("📘") and eh_sql:
+            continue
+        if filtro_origem.startswith("🗄️") and not eh_sql:
+            continue
+        if filtro_cat is not None and (d.get("categoria") or "geral").strip().lower() != filtro_cat:
+            continue
+        if pesquisa_rag and (
+            pesquisa_rag not in d["id"].lower() and pesquisa_rag not in d["texto"].lower()
+        ):
+            continue
+
+        if eh_sql:
+            hist_filtrados.append(d)
         else:
-            st.info("Nenhum documento encontrado.")
+            regras_filtradas.append(d)
+
+    total_visivel = len(regras_filtradas) + len(hist_filtrados)
+    st.caption(f"A apresentar **{total_visivel}** de **{len(rag.documentos)}** documentos indexados no motor TF-IDF.")
+
+    if total_visivel == 0:
+        st.info("Nenhum documento encontrado para os filtros selecionados.")
+        return
+
+    _renderizar_secao_caderno_rag("📘 Regras de Negócio Indexadas", "rag-origem-regra", regras_filtradas)
+    _renderizar_secao_caderno_rag("🗄️ Registos Históricos (SQLite)", "rag-origem-sql", hist_filtrados)
+
+
+def renderizar_explorador_rag() -> None:
+    if st.sidebar.button("📖 Base de Conhecimento & Motor RAG", key="btn_abrir_rag", width="stretch"):
+        _mostrar_popup_rag()
 
 
 def renderizar_resultados_acelerada() -> None:

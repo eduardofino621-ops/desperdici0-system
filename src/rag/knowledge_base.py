@@ -21,10 +21,10 @@ REGRAS_CONHECIMENTO = [
         "id": "Meteorologia: Dia de Chuva / Temporal",
         "categoria": "geral",
         "texto": (
-            "Dias de chuva intensa ou temporal reduzem drasticamente o tráfego pedonal e as visitas "
-            "espontâneas à loja (quebra de 20% a 40% na procura diária). Os agentes devem antecipar "
-            "excesso de stock em perecíveis (padaria, fruta, legumes, carne e pescado) e aplicar descontos de "
-            "validade mais cedo (a partir de 3 dias) para compensar a menor afluência."
+            "Dias de chuva intensa ou temporal reduzem o tráfego pedonal e as visitas espontâneas "
+            "(quebra de 20% a 40% na procura diária). Os agentes devem aplicar descontos graduais "
+            "(15% a 30% a 2 dias e 35% a 45% no último dia) para escoar perecíveis antes de recorrer "
+            "a encaminhamento externo."
         ),
     },
     {
@@ -53,9 +53,10 @@ REGRAS_CONHECIMENTO = [
         "id": "Ciclo Mensal: Fim do Mês (Contenção)",
         "categoria": "geral",
         "texto": (
-            "No fim do mês (dias 22 a 31), as famílias reduzem compras e procuram fortemente preço baixo. "
-            "Produtos premium (carne fresca, pescado, charcutaria) sofrem quebra de rotação e exigem "
-            "descontos mais agressivos (35% a 60%) ou encaminhamento rápido para cozinha interna e Sacos Surpresa."
+            "No fim do mês (dias 22 a 31), as famílias privilegiam preço baixo e artigos premium "
+            "(carne fresca, pescado, charcutaria) perdem rotação. Aplicar primeiro descontos graduais "
+            "(25% a 45%) para preservar margem e encaminhar apenas o excedente residual para cozinha "
+            "interna ou Sacos Surpresa."
         ),
     },
 
@@ -115,9 +116,10 @@ REGRAS_CONHECIMENTO = [
         "id": "Regra Categoria: Padaria e Sacos Surpresa",
         "categoria": "padaria",
         "texto": (
-            "Produtos de padaria fresca têm ciclo de vida de 24h. A menos de 2 horas do fecho da loja, "
-            "descontos de 50% a 70% ou a agregação em Sacos Surpresa equilibrados (0,50 kg) maximizam a "
-            "recuperação financeira; excedentes sem saída seguem para transformação em farinha de ração animal."
+            "Produtos de padaria fresca têm ciclo de vida de 24h. Durante o dia, descontos de 25% "
+            "escoam parte relevante do stock com boa margem; a menos de 2 horas do fecho, descontos "
+            "de 40% a 50% e Sacos Surpresa equilibrados (0,50 kg) maximizam a recuperação antes de "
+            "enviar sobras para ração animal."
         ),
     },
     {
@@ -150,9 +152,9 @@ REGRAS_CONHECIMENTO = [
         "id": "Regra Categoria: Fruta e Legumes",
         "categoria": "fruta",
         "texto": (
-            "Fruta e legumes em pico de stock excedente sofrem perda rápida de qualidade visual. "
-            "Descontos de 30% a 50% com 2 a 3 dias de antecedência aceleram o escoamento; excedentes aptos "
-            "seguem para doação ou encaminhamento útil antes de irem para o lixo."
+            "Fruta e legumes em pico de stock excedente perdem atratividade visual rapidamente. "
+            "Aplicar descontos graduais (20% a 30% com 2 a 3 dias e até 40% no último dia) para "
+            "maximizar a receita em loja, encaminhando para doação apenas o excesso sem escoamento previsto."
         ),
     },
 ]
@@ -252,7 +254,7 @@ def carregar_documentos_rag(db_path: str = "data/desperdicio.db") -> list[dict]:
                 JOIN catalogo_produtos p ON l.produto_id = p.produto_id
                 WHERE l.dias_para_expirar <= 5 AND l.desconto_validade > 0
                 GROUP BY p.produto_id
-                ORDER BY n_lotes DESC, desc_medio DESC
+                ORDER BY n_lotes DESC, preco_medio DESC
                 LIMIT 15
             """)
             for prod_id, nome, cat, elast, n_lotes, desc_med, preco_med in cursor.fetchall():

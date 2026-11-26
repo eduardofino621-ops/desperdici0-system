@@ -9,7 +9,7 @@ from src.simulation.orchestrator import (
     _formatar_delta_pt,
     formatar_eur,
     formatar_numero_pt,
-    simular_acelerada,
+    simular_horizonte_temporal,
 )
 from src.ui.components import (
     mostrar_popup_agentes,
@@ -367,31 +367,35 @@ def renderizar_resultados_acelerada() -> None:
             )
             dif_enc = res["total_doadas_cozinha"] - enc_lidl
 
-            k1, k2, k3, k4 = st.columns(4)
-            k1.metric(
-                "Ganho Taxa de Salvamento (TS)",
-                _formatar_delta_pt(ganho_ts, " p.p.", 1),
-                delta=f"Lidl: {formatar_numero_pt(base['ts_pct'], 1)}% → Desperdíci0%: {formatar_numero_pt(res['ts_pct'], 1)}%",
-                delta_color="normal" if ganho_ts >= 0 else "inverse",
-            )
-            k2.metric(
-                "Desperdício Evitado",
-                f"{formatar_numero_pt(reducao_desp_un, 0)} un/kg",
-                delta=f"{_formatar_delta_pt(-reducao_desp_un, ' un/kg', 0)} ({_formatar_delta_pt(-reducao_desp_pct, '%', 1)})",
-                delta_color="normal" if reducao_desp_un >= 0 else "inverse",
-            )
-            k3.metric(
-                "Custo de Perdas Evitado",
-                f"{formatar_numero_pt(poupanca_custo, 2)}€",
-                delta=f"{formatar_numero_pt(base['custo_desperdicio'], 2)}€ → {formatar_numero_pt(res['custo_desperdicio'], 2)}€",
-                delta_color="normal" if poupanca_custo >= 0 else "inverse",
-            )
-            k4.metric(
-                "Variação de Receita",
-                _formatar_delta_pt(dif_receita, "€", 2),
-                delta=f"Lidl: {formatar_numero_pt(base['receita_total'], 2)}€ → Desperdíci0%: {formatar_numero_pt(res['receita_total'], 2)}€",
-                delta_color="normal",
-            )
+            c1, c2, c3, c4 = st.columns(4)
+
+            with c1:
+                st.metric(
+                    label="Ganho Taxa de Salvamento (TS)",
+                    value=_formatar_delta_pt(ganho_ts, " p.p.", 1),
+                    delta_color="normal",
+                )
+
+            with c2:
+                st.metric(
+                    label="Desperdício Evitado",
+                    value=_formatar_delta_pt(reducao_desp_un, " un/kg", 0),
+                    delta_color="inverse",
+                )
+
+            with c3:
+                st.metric(
+                    label="Custo de Perdas Evitado",
+                    value=_formatar_delta_pt(poupanca_custo, "€", 2),
+                    delta_color="inverse",
+                )
+
+            with c4:
+                st.metric(
+                    label="Variação de Receita",
+                    value=_formatar_delta_pt(dif_receita, "€", 2),
+                    delta_color="normal",
+                )
 
             df_comp = pd.DataFrame([
                 {
@@ -505,7 +509,7 @@ def renderizar_resultados_acelerada() -> None:
                 )
                 .properties(height=310)
             )
-            st.altair_chart(grafico_desp, use_container_width=True)
+            st.altair_chart(grafico_desp, width='stretch')
 
             st.markdown("**2. Destino do que não é desperdiçado por categoria (unidades/kg salvos):**")
             cols_dest = st.columns(3)
@@ -558,17 +562,13 @@ def renderizar_resultados_acelerada() -> None:
                         )
                         .properties(height=280)
                     )
-                    st.altair_chart(graf_dest, use_container_width=True)
-
-
-renderizar_resultados_multidia = renderizar_resultados_acelerada
-
+                    st.altair_chart(graf_dest, width='stretch')
 
 def renderizar_simulador_acelerada_sidebar() -> None:
     with st.sidebar.expander("⏩ Simulação Acelerada", expanded=False):
         n_dias = st.selectbox(
             "Dias:",
-            [2, 5, 7, 10],
+            [2, 5, 7],
             index=1,
             key="acelerada_n_dias",
         )
@@ -583,7 +583,7 @@ def renderizar_simulador_acelerada_sidebar() -> None:
             dias_escolhidos = int(n_dias)
             with st.spinner(f"A simular {dias_escolhidos} dias..."):
                 modo_meteo = st.session_state.get("modo_meteo_ativo", "Automático (Tempo Real - Coimbra)")
-                resultado = simular_acelerada(
+                resultado = simular_horizonte_temporal(
                     dias_simulacao=dias_escolhidos,
                     modo_meteo=modo_meteo,
                     combinar_perturbacoes_aleatorias=misturar_pert,
@@ -596,6 +596,3 @@ def renderizar_simulador_acelerada_sidebar() -> None:
                 st.session_state.pop("resultado_acelerada", None)
                 st.session_state.pop("resultado_multidia", None)
                 st.rerun()
-
-
-renderizar_simulador_multidia_sidebar = renderizar_simulador_acelerada_sidebar

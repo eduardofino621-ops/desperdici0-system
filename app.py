@@ -12,8 +12,8 @@ from src.ui.tab_operations import (
     renderizar_aba_operacoes,
     renderizar_explorador_rag,
     renderizar_historico_perturbacoes_sidebar,
-    renderizar_resultados_multidia,
-    renderizar_simulador_multidia_sidebar,
+    renderizar_resultados_acelerada,
+    renderizar_simulador_acelerada_sidebar,
 )
 
 st.set_page_config(
@@ -101,7 +101,7 @@ if st.session_state.perturbacoes_acumuladas:
 # Ferramentas auxiliares na barra lateral (abaixo do painel de stress)
 st.sidebar.divider()
 renderizar_historico_perturbacoes_sidebar()
-renderizar_simulador_multidia_sidebar()
+renderizar_simulador_acelerada_sidebar()
 renderizar_explorador_rag()
 
 data_ativa = st.session_state.data_referencia_ativa
@@ -125,7 +125,7 @@ tab1, tab2 = st.tabs([
 ])
 
 with tab1:
-    renderizar_resultados_multidia()
+    renderizar_resultados_acelerada()
     renderizar_aba_operacoes()
 
 with tab2:

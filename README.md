@@ -49,7 +49,7 @@ venv\Scripts\Activate.ps1
 source venv/bin/activate
 
 # 3. Instalar as dependências necessárias
-pip install langchain langchain-openai langgraph streamlit pandas pydantic streamlit-aggrid altair scikit-learn qrcode[pil]
+pip install langchain langchain-openai langgraph streamlit pandas pydantic streamlit-aggrid altair scikit-learn qrcode[pil] pytest
 ```
 
 *(Opcional)* Para ativar o raciocínio generativo dos agentes via OpenRouter, defina a variável de ambiente:
@@ -79,6 +79,17 @@ streamlit run app.py
 - **Análise por Categoria e Destinos:** Visualização comparativa em **Altair** do desperdício evitado e da distribuição entre *Vendido (Desconto/Saco)*, *Doação / Cozinha* e *Ração / Valorização*.
 - **Explorador RAG e Histórico de Perturbações:** Consulta direta na barra lateral às regras indexadas e aos registos históricos persistidos em SQLite.
 
+---
+
+## 🧪 Testes Automatizados
+
+O projeto inclui testes unitários e de simulação na pasta `tests/` (`test_agents.py`, `test_rag.py` e `test_simulation.py`), validando agentes, otimização de curvas de desconto, normalização/recuperação RAG e invariantes da simulação multi-dia.
+
+Para executar a suíte de testes:
+
+```bash
+pytest -v
+```
 ---
 
 ## 📊 Métricas de Avaliação

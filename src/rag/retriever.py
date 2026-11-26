@@ -2,7 +2,7 @@ from datetime import date
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-from src.rag.knowledge_base import carregar_documentos_rag
+from src.rag.knowledge_base import _normalizar_categoria, carregar_documentos_rag
 
 
 def construir_query_contextual_rag(
@@ -12,8 +12,9 @@ def construir_query_contextual_rag(
     data_ref: date,
     meteo: dict | None = None,
 ) -> str:
+    cat_norm = _normalizar_categoria(prod.get("categoria"))
     partes = [
-        f"Produto {prod.get('nome', '')} categoria {prod.get('categoria', 'geral')}",
+        f"Produto {prod.get('nome', '')} categoria {cat_norm}",
         f"validade {lote.get('dias_para_expirar', 3)} dias",
     ]
 
@@ -35,11 +36,11 @@ def construir_query_contextual_rag(
     for p in perturbacoes_ativas:
         if "2 horas" in p:
             partes.append("menos de 2 horas para fechar a loja fecho")
-        elif "Clientes" in p:
+        if "Clientes" in p:
             partes.append("quebra de clientes dia de chuva menor afluência")
-        elif "Feriado" in p:
+        if "Feriado" in p:
             partes.append("feriado loja fechada amanhã urgência máxima")
-        elif "Stock Excedente" in p:
+        if "Stock Excedente" in p:
             partes.append("pico de stock excedente")
 
     return ", ".join(partes)
@@ -56,13 +57,14 @@ class RecuperadorRAG:
         if self.matriz_tfidf is None or not self.documentos:
             return []
 
-        query_enriquecida = f"{categoria} {consulta}".strip()
+        cat_norm = _normalizar_categoria(categoria) if categoria else ""
+        query_enriquecida = f"{cat_norm} {consulta}".strip()
         vec_query = self.vectorizer.transform([query_enriquecida])
         scores = cosine_similarity(vec_query, self.matriz_tfidf).flatten()
 
         for idx, doc in enumerate(self.documentos):
-            if categoria and doc.get("categoria") == categoria.lower():
-                scores[idx] += 0.15
+            if cat_norm and doc.get("categoria") == cat_norm:
+                scores[idx] = min(1.0, float(scores[idx]) + 0.15)
 
         indices_top = scores.argsort()[::-1][:top_k]
         return [

@@ -1,17 +1,9 @@
+import logging
 from pathlib import Path
 import sqlite3
+from src.csp.constraints import _normalizar_categoria
 
-
-def _normalizar_categoria(categoria: str | None) -> str:
-    cat = (categoria or "geral").strip().lower()
-    if cat in ["peixe", "pescado"]:
-        return "pescado"
-    if cat in ["horticolas", "hortícolas", "legumes"]:
-        return "legumes"
-    if cat in ["laticínios", "laticinios"]:
-        return "laticinios"
-    return cat
-
+logger = logging.getLogger(__name__)
 
 REGRAS_CONHECIMENTO = [
     # ==========================================================================
@@ -24,7 +16,7 @@ REGRAS_CONHECIMENTO = [
             "Dias de chuva intensa ou temporal reduzem o tráfego pedonal e as visitas espontâneas "
             "(quebra de 20% a 40% na procura diária). Os agentes devem aplicar descontos graduais "
             "(15% a 30% a 2 dias e 35% a 45% no último dia) para escoar perecíveis antes de recorrer "
-            "a encaminhamento externo."
+            "a encaminhamento externo elegível."
         ),
     },
     {
@@ -45,7 +37,7 @@ REGRAS_CONHECIMENTO = [
         "categoria": "geral",
         "texto": (
             "No início do mês (dias 1 a 10, após pagamento de salários e pensões), há maior afluência "
-            "e carrinhos de compras maiores, incluindo produtos de maior valor (carne, pescado, charcutaria). "
+            "e carrinhos de compras maiores, incluindo produtos de maior valor (carne, pescado). "
             "A rotação natural de stock é elevada, pelo que descontos moderados (15% a 30%) bastam para escoar lotes."
         ),
     },
@@ -54,7 +46,7 @@ REGRAS_CONHECIMENTO = [
         "categoria": "geral",
         "texto": (
             "No fim do mês (dias 22 a 31), as famílias privilegiam preço baixo e artigos premium "
-            "(carne fresca, pescado, charcutaria) perdem rotação. Aplicar primeiro descontos graduais "
+            "(carne fresca, pescado) perdem rotação. Aplicar primeiro descontos graduais "
             "(25% a 45%) para preservar margem e encaminhar apenas o excedente residual para cozinha "
             "interna ou Sacos Surpresa."
         ),
@@ -78,7 +70,9 @@ REGRAS_CONHECIMENTO = [
             "Na véspera de feriados e nos próprios feriados (quando a loja está aberta), há grande afluência "
             "para compras de última hora e convívios (carne, pescado, bebidas, padaria, fruta). Contudo, se a loja "
             "encerrar no dia seguinte (feriado fechado), qualquer lote com validade <= 1 dia deve ter "
-            "urgência máxima: desconto agressivo até 2 horas antes do fecho e doação externa (IPSS) no encerramento."
+            "urgência máxima: desconto agressivo até 2 horas antes do fecho e encaminhamento interno elegível "
+            "(cozinha interna para carne/pescado ou Sacos Surpresa/ração animal para padaria e pastelaria; "
+            "doação externa IPSS apenas para lotes 'Consumir até' com >= 48h de validade)."
         ),
     },
     {
@@ -86,9 +80,9 @@ REGRAS_CONHECIMENTO = [
         "categoria": "geral",
         "texto": (
             "Na época de Natal e Ano Novo (dezembro), as compras aumentam significativamente, com picos "
-            "de procura em pescado (bacalhau), carne (peru, cabrito), charcutaria, fruta e pastelaria festiva. "
+            "de procura em pescado (bacalhau), carne (peru, cabrito), fruta e pastelaria festiva. "
             "Porém, após o dia 24 e dia 31 de dezembro, a procura cai abruptamente e os excedentes sazonais "
-            "exigem liquidação imediata (50% a 70%) ou doação para evitar desperdício pós-festa."
+            "exigem liquidação imediata (50% a 70%) ou encaminhamento elegível para evitar desperdício pós-festa."
         ),
     },
     {
@@ -97,7 +91,8 @@ REGRAS_CONHECIMENTO = [
         "texto": (
             "Na Páscoa (março/abril) e nos Santos Populares (junho), disparam as compras de carne, pescado "
             "(sardinha), padaria tradicional (folar, broa) e bebidas. Lotes de produtos festivos que sobram "
-            "no dia seguinte ao evento perdem atratividade comercial e devem ser escoados via descontos críticos ou doação."
+            "no dia seguinte ao evento perdem atratividade comercial e devem ser escoados via descontos críticos "
+            "ou destino operacional elegível."
         ),
     },
     {
@@ -113,13 +108,21 @@ REGRAS_CONHECIMENTO = [
     # 4. REGRAS OPERACIONAIS POR CATEGORIA E SEGURANÇA ALIMENTAR
     # ==========================================================================
     {
-        "id": "Regra Categoria: Padaria e Sacos Surpresa",
+        "id": "Regra Categoria: Padaria, Pastelaria e Sacos Surpresa",
         "categoria": "padaria",
         "texto": (
-            "Produtos de padaria fresca têm ciclo de vida de 24h. Durante o dia, descontos de 25% "
-            "escoam parte relevante do stock com boa margem; a menos de 2 horas do fecho, descontos "
-            "de 40% a 50% e Sacos Surpresa equilibrados (0,50 kg) maximizam a recuperação antes de "
-            "enviar sobras para ração animal."
+            "Produtos de padaria e pastelaria fresca têm ciclo de vida curto (24h a 48h). Durante o dia, "
+            "descontos de 25% escoam o stock em prateleira, enquanto a quota elegível para Sacos Surpresa "
+            "(35% em operação normal ou 50% com perturbação/fecho a <= 2h) recebe desconto de 45% em lotes "
+            "equilibrados de 0,50 kg antes de enviar sobras expiradas para farinha de ração animal."
+        ),
+    },
+    {
+        "id": "Regra Categoria: Laticínios (Teto 50% a 24h)",
+        "categoria": "laticinios",
+        "texto": (
+            "Artigos de laticínios com 24h ou menos para expirar têm limite máximo de desconto de 50% "
+            "em etiqueta ESL para preservar equilíbrio comercial e evitar distorção de procura."
         ),
     },
     {
@@ -127,8 +130,8 @@ REGRAS_CONHECIMENTO = [
         "categoria": "carne",
         "texto": (
             "A carne fresca ostenta data-limite de consumo ('Consumir até'). Por segurança alimentar, "
-            "nunca pode ser vendida após a data de validade: no último dia útil, se não houver escoamento "
-            "previsto até ao fecho, deve seguir para cozinha interna (até às 18h) ou valorização/doação elegível."
+            "nunca pode ser vendida após a data de validade, nunca vai para ração animal e não pode ir "
+            "para doação externa a <= 24h: no último dia útil, sem escoamento previsto, segue para cozinha interna."
         ),
     },
     {
@@ -136,8 +139,8 @@ REGRAS_CONHECIMENTO = [
         "categoria": "pescado",
         "texto": (
             "O pescado fresco ostenta data-limite de consumo ('Consumir até'). Por segurança alimentar, "
-            "nunca pode ser vendido após a data de validade e não pode ir para doação externa a <= 24h: "
-            "no último dia útil, se não houver escoamento previsto, deve seguir para cozinha interna ou valorização."
+            "nunca pode ser vendido após a data de validade, nunca vai para ração animal e não pode ir "
+            "para doação externa a <= 24h: no último dia útil, sem escoamento previsto, segue para cozinha interna."
         ),
     },
     {
@@ -153,8 +156,18 @@ REGRAS_CONHECIMENTO = [
         "categoria": "fruta",
         "texto": (
             "Fruta e legumes em pico de stock excedente perdem atratividade visual rapidamente. "
-            "Aplicar descontos graduais (20% a 30% com 2 a 3 dias e até 40% no último dia) para "
-            "maximizar a receita em loja, encaminhando para doação apenas o excesso sem escoamento previsto."
+            "Aplicar descontos graduais (20% a 30% com 2 a 3 dias e 40% ou mais no último dia, até ao teto "
+            "legal de 70%) para maximizar a receita em loja, encaminhando para doação IPSS o excesso "
+            "com >= 48h de validade."
+        ),
+    },
+    {
+        "id": "Regra Categoria: Hortícolas e Legumes Frescos",
+        "categoria": "legumes",
+        "texto": (
+            "Legumes e hortícolas frescos com excesso de stock devem receber descontos graduais "
+            "(20% a 30% com 2 a 3 dias e 40% ou mais no último dia, até ao teto legal de 70%) e só seguem "
+            "para doação IPSS quando têm pelo menos 48h de validade."
         ),
     },
 ]
@@ -173,7 +186,6 @@ def carregar_documentos_rag(db_path: str = "data/desperdicio.db") -> list[dict]:
         with sqlite3.connect(caminho) as conn:
             cursor = conn.cursor()
 
-            # 1. Histórico agregado por cenário (telemetria_execucoes)
             cursor.execute("""
                 SELECT cenario, COUNT(*), ROUND(AVG(lotes_desconto_validade), 1), ROUND(AVG(desconto_medio_pct), 1)
                 FROM telemetria_execucoes
@@ -192,7 +204,6 @@ def carregar_documentos_rag(db_path: str = "data/desperdicio.db") -> list[dict]:
                     ),
                 })
 
-            # 2. Eficiência financeira e recuperação de margem por categoria
             cursor.execute("""
                 SELECT
                     p.categoria,
@@ -217,7 +228,6 @@ def carregar_documentos_rag(db_path: str = "data/desperdicio.db") -> list[dict]:
                     ),
                 })
 
-            # 3. Comportamento por regime de conservação e urgência (dias_para_expirar)
             cursor.execute("""
                 SELECT
                     p.conservacao,
@@ -240,7 +250,6 @@ def carregar_documentos_rag(db_path: str = "data/desperdicio.db") -> list[dict]:
                     ),
                 })
 
-            # 4. Top 15 produtos individuais mais recorrentes em risco (memória por artigo)
             cursor.execute("""
                 SELECT
                     p.produto_id,
@@ -269,7 +278,6 @@ def carregar_documentos_rag(db_path: str = "data/desperdicio.db") -> list[dict]:
                     ),
                 })
 
-            # 5. Artigos de alta rotação que escoam sem precisar de desconto de validade
             cursor.execute("""
                 SELECT
                     p.categoria,
@@ -292,7 +300,7 @@ def carregar_documentos_rag(db_path: str = "data/desperdicio.db") -> list[dict]:
                         f"absorve o stock disponível."
                     ),
                 })
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Falha ao carregar histórico SQLite para o RAG (%s): %s", caminho, exc)
 
     return documentos

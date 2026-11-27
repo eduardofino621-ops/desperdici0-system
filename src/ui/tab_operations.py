@@ -1,8 +1,8 @@
 import html
+import altair as alt
 import pandas as pd
 from st_aggrid import AgGrid, ColumnsAutoSizeMode, GridOptionsBuilder, JsCode
 import streamlit as st
-import altair as alt
 
 from src.rag.retriever import RecuperadorRAG
 from src.simulation.orchestrator import (
@@ -13,15 +13,153 @@ from src.simulation.orchestrator import (
 )
 from src.ui.components import (
     mostrar_popup_agentes,
+    obter_dado_pagina,
     renderizar_analise_decisoes,
     renderizar_cartoes_kpi,
 )
 from src.ui.styles import CATEGORIAS_UI
 
+COLUNA_DECISAO_AGENTES = "Decisão dos agentes"
+COLUNA_LEGADA_CSP = "Consultar Validação CSP"
+
 
 def _alternar_cat_tab1(cat_key: str) -> None:
     atual = st.session_state.get("filtro_cat_tab1")
     st.session_state.filtro_cat_tab1 = None if atual == cat_key else cat_key
+
+
+def _chave_cenario_atual() -> tuple:
+    pert_lista = list(st.session_state.get("perturbacoes_ativas", []) or [])
+    pert = tuple(sorted(pert_lista))
+    fecho = "A menos de 2 horas de fechar a loja." in pert_lista
+    meteo = str(
+        st.session_state.get("modo_meteo_ativo")
+        or st.session_state.get("modo_meteo")
+        or "Automático (Tempo Real - Coimbra)"
+    )
+    return (pert, fecho, meteo)
+
+
+def _normalizar_linhas_operacoes(resultados: list | None) -> list[dict]:
+    linhas = []
+    for r in resultados or []:
+        item = dict(r)
+        if COLUNA_DECISAO_AGENTES not in item:
+            item[COLUNA_DECISAO_AGENTES] = item.get(COLUNA_LEGADA_CSP, "— (Validade > 5d)")
+        linhas.append(item)
+    return linhas
+
+
+def _assinatura_resultados(resultados: list | None) -> tuple:
+    if not resultados:
+        return ()
+    try:
+        return tuple(
+            (
+                r.get("Lote"),
+                r.get("Destino Operacional"),
+                r.get(COLUNA_DECISAO_AGENTES),
+                r.get("Dias"),
+                r.get("Validade"),
+            )
+            for r in resultados
+        )
+    except Exception:
+        return (len(resultados),)
+
+
+def limpar_estado_cenario_atual() -> None:
+    st.session_state["resultados_simulacao"] = []
+    st.session_state["logs_por_lote"] = {}
+    st.session_state["historico_sessao"] = []
+    st.session_state["pagina_decisoes"] = 0
+    st.session_state["sacos_surpresa_lista"] = []
+    st.session_state["lotes_simulados"] = []
+    st.session_state["resultado_acelerada"] = None
+    st.session_state["resultado_multidia"] = None
+    st.session_state["aggrid_key_v"] = st.session_state.get("aggrid_key_v", 0) + 1
+
+
+def guardar_snapshot_cenario(chave: tuple | None = None) -> None:
+    st.session_state.setdefault("snapshots_perturbacao", {})
+    chave_alvo = chave if chave is not None else _chave_cenario_atual()
+    st.session_state["snapshots_perturbacao"][chave_alvo] = {
+        "resultados_simulacao": _normalizar_linhas_operacoes(
+            st.session_state.get("resultados_simulacao")
+        ),
+        "logs_por_lote": dict(st.session_state.get("logs_por_lote") or {}),
+        "historico_sessao": list(st.session_state.get("historico_sessao") or []),
+        "sacos_surpresa_lista": list(st.session_state.get("sacos_surpresa_lista") or []),
+        "lotes_simulados": list(st.session_state.get("lotes_simulados") or []),
+        "resultado_acelerada": st.session_state.get("resultado_acelerada"),
+        "resultado_multidia": st.session_state.get("resultado_multidia"),
+    }
+
+
+def restaurar_snapshot_cenario(chave: tuple | None = None) -> bool:
+    snapshots = st.session_state.get("snapshots_perturbacao") or {}
+    chave_alvo = chave if chave is not None else _chave_cenario_atual()
+    snap = snapshots.get(chave_alvo)
+    if not snap:
+        return False
+
+    st.session_state["resultados_simulacao"] = _normalizar_linhas_operacoes(
+        snap.get("resultados_simulacao")
+    )
+    st.session_state["logs_por_lote"] = dict(snap.get("logs_por_lote") or {})
+    historico = list(snap.get("historico_sessao") or [])
+    st.session_state["historico_sessao"] = historico
+    st.session_state["pagina_decisoes"] = max(0, len(historico) - 1)
+    st.session_state["sacos_surpresa_lista"] = list(snap.get("sacos_surpresa_lista") or [])
+    st.session_state["lotes_simulados"] = list(snap.get("lotes_simulados") or [])
+    st.session_state["resultado_acelerada"] = snap.get("resultado_acelerada")
+    st.session_state["resultado_multidia"] = snap.get("resultado_multidia")
+    st.session_state["aggrid_key_v"] = st.session_state.get("aggrid_key_v", 0) + 1
+    return True
+
+
+def _sincronizar_estado_por_perturbacao() -> None:
+    chave_atual = _chave_cenario_atual()
+    chave_anterior = st.session_state.get("ultima_chave_cenario")
+    ass_resultados = _assinatura_resultados(st.session_state.get("resultados_simulacao"))
+    ass_anterior = st.session_state.get("_ass_resultados_ultimo_sync", ())
+
+    tem_estado = any(
+        st.session_state.get(k)
+        for k in (
+            "resultados_simulacao",
+            "historico_sessao",
+            "logs_por_lote",
+            "resultado_acelerada",
+            "resultado_multidia",
+        )
+    )
+    # Resultados diferentes dos da última sincronização = acabados de calcular
+    resultados_novos = bool(ass_resultados) and ass_resultados != ass_anterior
+
+    if chave_anterior is not None and chave_atual != chave_anterior and not resultados_novos:
+        # Só mudou o cenário: guarda o antigo e repõe (ou limpa) o novo
+        if tem_estado:
+            guardar_snapshot_cenario(chave_anterior)
+        if not restaurar_snapshot_cenario(chave_atual):
+            limpar_estado_cenario_atual()
+    elif tem_estado:
+        # Mesmo cenário, ou resultados novos: pertencem ao cenário atual
+        guardar_snapshot_cenario(chave_atual)
+
+    st.session_state["ultima_chave_cenario"] = chave_atual
+    st.session_state["_ass_resultados_ultimo_sync"] = _assinatura_resultados(
+        st.session_state.get("resultados_simulacao")
+    )
+
+
+def _extrair_lote_selecionado(grid_resp: dict) -> str | None:
+    sel = grid_resp.get("selected_rows")
+    if isinstance(sel, pd.DataFrame) and not sel.empty and "Lote" in sel.columns:
+        return str(sel.iloc[0]["Lote"])
+    if isinstance(sel, list) and len(sel) > 0 and isinstance(sel[0], dict):
+        return str(sel[0].get("Lote") or "") or None
+    return None
 
 
 @st.fragment
@@ -43,7 +181,10 @@ def _renderizar_tabela_operacoes() -> None:
 
     st.session_state.setdefault("filtro_cat_tab1", None)
 
-    for linha_cats in (CATEGORIAS_UI[:4], CATEGORIAS_UI[4:]):
+    cats_visiveis = [(cat_key, cat_label) for cat_key, cat_label in CATEGORIAS_UI]
+
+    for i in range(0, len(cats_visiveis), 4):
+        linha_cats = cats_visiveis[i : i + 4]
         cols_cat = st.columns(4)
         for col_c, (cat_key, cat_label) in zip(cols_cat, linha_cats):
             with col_c:
@@ -57,7 +198,19 @@ def _renderizar_tabela_operacoes() -> None:
                     args=(cat_key,),
                 )
 
-    df_res = pd.DataFrame(st.session_state.resultados_simulacao)
+    resultados_atuais = _normalizar_linhas_operacoes(
+        obter_dado_pagina("resultados_simulacao")
+    )
+    ass_atual = _assinatura_resultados(resultados_atuais)
+    if ass_atual != st.session_state.get("ultima_ass_tabela_operacoes"):
+        st.session_state["ultima_ass_tabela_operacoes"] = ass_atual
+        st.session_state["aggrid_key_v"] = st.session_state.get("aggrid_key_v", 0) + 1
+
+    df_res = pd.DataFrame(resultados_atuais)
+    if df_res.empty:
+        st.info("ℹ️ Nenhum lote disponível para a simulação atual.")
+        return
+
     if st.session_state.filtro_cat_tab1:
         df_res = df_res[df_res["Categoria"].str.lower() == st.session_state.filtro_cat_tab1]
 
@@ -72,7 +225,19 @@ def _renderizar_tabela_operacoes() -> None:
     if filtro_validade_tab == "1 a 5 dias":
         df_res = df_res[df_res["Dias"] <= 5]
     elif filtro_validade_tab == "Sacos Surpresa":
-        df_res = df_res[df_res["Destino Operacional"].str.contains("Sacos Surpresa", na=False)]
+        sacos_lista = obter_dado_pagina("sacos_surpresa_lista") or []
+        lotes_nos_sacos = {
+            lid
+            for saco in sacos_lista
+            for lid in (saco.get("lotes_consumo") or {}).keys()
+        }
+        if lotes_nos_sacos:
+            df_res = df_res[
+                df_res["Destino Operacional"].str.contains("Sacos Surpresa", na=False)
+                & df_res["Lote"].isin(lotes_nos_sacos)
+            ]
+        else:
+            df_res = df_res[df_res["Destino Operacional"].str.contains("Sacos Surpresa", na=False)]
     elif filtro_validade_tab == "Superior a 5 dias":
         df_res = df_res[df_res["Dias"] > 5]
 
@@ -91,7 +256,32 @@ def _renderizar_tabela_operacoes() -> None:
         }
     """)
     fmt_dias = JsCode("function(params) { return params.value != null ? params.value + 'd' : ''; }")
-    clicar_csp = JsCode("function(params) { params.node.setSelected(true, true); }")
+    selecionar_linha_agentes = JsCode("""
+        function(params) {
+            var ativo = params.data && Number(params.data.Dias) <= 5 && params.value && !String(params.value).startsWith('—');
+            if (ativo) {
+                params.node.setSelected(true, true);
+            }
+        }
+    """)
+    estilo_celula_agentes = JsCode("""
+        function(params) {
+            var ativo = params.data && Number(params.data.Dias) <= 5 && params.value && !String(params.value).startsWith('—');
+            if (ativo) {
+                return {
+                    color: '#0ea5e9',
+                    textDecoration: 'underline',
+                    cursor: 'pointer',
+                    fontWeight: '600'
+                };
+            }
+            return {
+                color: 'var(--text-color)',
+                opacity: '0.65',
+                cursor: 'default'
+            };
+        }
+    """)
 
     gb = GridOptionsBuilder.from_dataframe(df_grid)
     gb.configure_default_column(
@@ -111,7 +301,7 @@ def _renderizar_tabela_operacoes() -> None:
     )
 
     for col_nome in df_grid.columns:
-        if col_nome == "Consultar Validação CSP":
+        if col_nome == COLUNA_DECISAO_AGENTES:
             continue
         max_chars = int(df_grid[col_nome].astype(str).str.len().max())
         if col_nome == "Validade":
@@ -123,17 +313,12 @@ def _renderizar_tabela_operacoes() -> None:
             gb.configure_column(col_nome, width=larg, minWidth=larg)
 
     gb.configure_column(
-        "Consultar Validação CSP",
-        width=135,
-        minWidth=135,
+        COLUNA_DECISAO_AGENTES,
+        width=165,
+        minWidth=165,
         pinned="right",
-        cellStyle={
-            "color": "#0ea5e9",
-            "textDecoration": "underline",
-            "cursor": "pointer",
-            "fontWeight": "600",
-        },
-        onCellClicked=clicar_csp,
+        cellStyle=estilo_celula_agentes,
+        onCellClicked=selecionar_linha_agentes,
     )
 
     custom_css = {
@@ -171,9 +356,11 @@ def _renderizar_tabela_operacoes() -> None:
     }
 
     st.session_state.setdefault("aggrid_key_v", 0)
+    id_cenario = abs(hash(_chave_cenario_atual())) % 100000
+    pag_atual = st.session_state.get("pagina_decisoes", 0)
     grid_resp = AgGrid(
         df_grid,
-        key=f"tabela_operacoes_{st.session_state['aggrid_key_v']}",
+        key=f"tabela_operacoes_{id_cenario}_{pag_atual}_{st.session_state['aggrid_key_v']}",
         gridOptions=gb.build(),
         update_on=["selectionChanged"],
         columns_auto_size_mode=ColumnsAutoSizeMode.NO_AUTOSIZE,
@@ -184,18 +371,16 @@ def _renderizar_tabela_operacoes() -> None:
         fit_columns_on_grid_load=False,
     )
 
-    sel = grid_resp.get("selected_rows")
-    lote_clicado = None
-    if isinstance(sel, pd.DataFrame) and not sel.empty:
-        lote_clicado = sel.iloc[0]["Lote"]
-    elif isinstance(sel, list) and len(sel) > 0:
-        lote_clicado = sel[0]["Lote"]
-    if lote_clicado:
+    lote_clicado = _extrair_lote_selecionado(grid_resp)
+    logs_disponiveis = obter_dado_pagina("logs_por_lote") or {}
+    if lote_clicado and lote_clicado in logs_disponiveis:
         st.session_state["aggrid_key_v"] += 1
         mostrar_popup_agentes(lote_clicado)
 
 
 def renderizar_aba_operacoes() -> None:
+    _sincronizar_estado_por_perturbacao()
+
     historico = st.session_state.get("historico_sessao", [])
     if historico:
         renderizar_cartoes_kpi(historico[0]["kpis"])
@@ -222,15 +407,24 @@ def _rotulo_categoria_rag(cat: str | None) -> str:
     return _NOMES_CAT_RAG.get(chave, chave.capitalize())
 
 
+def _obter_rag_em_cache() -> RecuperadorRAG:
+    rag = st.session_state.get("_rag_retriever_cache")
+    if rag is None:
+        rag = RecuperadorRAG()
+        st.session_state["_rag_retriever_cache"] = rag
+    return rag
+
+
 def _renderizar_secao_caderno_rag(titulo: str, classe_banner: str, docs: list[dict]) -> None:
     if not docs:
         return
 
     st.markdown(
         f'<div class="rag-origem-banner {classe_banner}">'
-        f'<span>{html.escape(titulo)}</span>'
-        f'<span class="rag-origem-count">{len(docs)} {"documento" if len(docs) == 1 else "documentos"}</span>'
-        f'</div>',
+        f"<span>{html.escape(titulo)}</span>"
+        f'<span class="rag-origem-count">{len(docs)}'
+        f' {"documento" if len(docs) == 1 else "documentos"}</span>'
+        f"</div>",
         unsafe_allow_html=True,
     )
 
@@ -239,7 +433,6 @@ def _renderizar_secao_caderno_rag(titulo: str, classe_banner: str, docs: list[di
         cat_key = (d.get("categoria") or "geral").strip().lower()
         por_categoria.setdefault(cat_key, []).append(d)
 
-    # "geral" aparece primeiro; restantes categorias por ordem alfabética
     cats_ordenadas = sorted(por_categoria.keys(), key=lambda c: (0 if c == "geral" else 1, c))
 
     blocos_html = []
@@ -251,7 +444,7 @@ def _renderizar_secao_caderno_rag(titulo: str, classe_banner: str, docs: list[di
                 f'<div class="rag-card">'
                 f'<div class="rag-card-title">{html.escape(doc["id"])}</div>'
                 f'<div class="rag-card-body">{html.escape(doc["texto"])}</div>'
-                f'</div>'
+                f"</div>"
             )
 
     st.markdown(f'<div class="rag-notebook">{"".join(blocos_html)}</div>', unsafe_allow_html=True)
@@ -259,16 +452,17 @@ def _renderizar_secao_caderno_rag(titulo: str, classe_banner: str, docs: list[di
 
 @st.dialog("📖 Base de Conhecimento & Motor RAG", width="large")
 def _mostrar_popup_rag() -> None:
-    rag = RecuperadorRAG()
-    total_regras = sum(1 for d in rag.documentos if not d["id"].startswith("Histórico "))
-    total_hist = len(rag.documentos) - total_regras
+    rag = _obter_rag_em_cache()
+    docs_ativos = list(rag.documentos)
+    total_regras = sum(1 for d in docs_ativos if not d["id"].startswith("Histórico "))
+    total_hist = len(docs_ativos) - total_regras
 
     f1, f2, f3 = st.columns([1.4, 1.1, 1.3])
     with f1:
         filtro_origem = st.selectbox(
             "Origem do Conhecimento:",
             [
-                f"Todas ({len(rag.documentos)})",
+                f"Todas ({len(docs_ativos)})",
                 f"📘 Regras de Negócio Indexadas ({total_regras})",
                 f"🗄️ Registos Históricos (SQLite) ({total_hist})",
             ],
@@ -276,7 +470,7 @@ def _mostrar_popup_rag() -> None:
         )
     with f2:
         cats_unicas = sorted(
-            {(d.get("categoria") or "geral").strip().lower() for d in rag.documentos},
+            {(d.get("categoria") or "geral").strip().lower() for d in docs_ativos},
             key=lambda c: (0 if c == "geral" else 1, c),
         )
         mapa_cat_label = {"Todas": None, **{_rotulo_categoria_rag(c): c for c in cats_unicas}}
@@ -296,7 +490,7 @@ def _mostrar_popup_rag() -> None:
     regras_filtradas = []
     hist_filtrados = []
 
-    for d in rag.documentos:
+    for d in docs_ativos:
         eh_sql = d["id"].startswith("Histórico ")
         if filtro_origem.startswith("📘") and eh_sql:
             continue
@@ -315,7 +509,9 @@ def _mostrar_popup_rag() -> None:
             regras_filtradas.append(d)
 
     total_visivel = len(regras_filtradas) + len(hist_filtrados)
-    st.caption(f"A apresentar **{total_visivel}** de **{len(rag.documentos)}** documentos indexados no motor TF-IDF.")
+    st.caption(
+        f"A apresentar **{total_visivel}** de **{len(docs_ativos)}** documentos indexados no motor TF-IDF."
+    )
 
     if total_visivel == 0:
         st.info("Nenhum documento encontrado para os filtros selecionados.")
@@ -327,13 +523,21 @@ def _mostrar_popup_rag() -> None:
 
 def renderizar_explorador_rag() -> None:
     if st.sidebar.button("📖 Base de Conhecimento & Motor RAG", key="btn_abrir_rag", width="stretch"):
+        st.session_state.pop("_rag_retriever_cache", None)
         _mostrar_popup_rag()
 
 
 def renderizar_resultados_acelerada() -> None:
+    _sincronizar_estado_por_perturbacao()
+
     res = st.session_state.get("resultado_acelerada") or st.session_state.get("resultado_multidia")
     if not res:
         return
+
+    enc_nosso = res.get(
+        "total_encaminhadas_total",
+        res.get("total_doadas_cozinha", 0.0) + res.get("total_racao_valorizacao", 0.0),
+    )
 
     with st.expander(
         f"⏩ Resultados da Simulação Acelerada ({res['dias_simulados']} dias)",
@@ -346,26 +550,23 @@ def renderizar_resultados_acelerada() -> None:
 
         m1, m2, m3, m4, m5 = st.columns(5)
         with m1:
-            st.metric(
-                label="Taxa de Salvamento (TS)",
-                value=f"{formatar_numero_pt(ts_val, 1)}%",
-            )
+            st.metric(label="Taxa de Salvamento (TS)", value=f"{formatar_numero_pt(ts_val, 1)}%")
             st.caption(estado_meta)
         with m2:
             st.metric(
                 label="Total Vendido",
-                value=f"{formatar_numero_pt(res['total_vendidas'], 0)} un/kg",
+                value=f"{formatar_numero_pt(res['total_vendidas'], 0)} kg",
             )
             st.caption(f"Receita: {formatar_numero_pt(res['receita_total'], 2)}€")
         with m3:
             st.metric(
                 label="Doação / Reaproveit.",
-                value=f"{formatar_numero_pt(res['total_doadas_cozinha'], 0)} un/kg",
+                value=f"{formatar_numero_pt(enc_nosso, 0)} kg",
             )
         with m4:
             st.metric(
                 label="Desperdício (Lixo)",
-                value=f"{formatar_numero_pt(res['total_desperdicadas'], 0)} un/kg",
+                value=f"{formatar_numero_pt(res['total_desperdicadas'], 0)} kg",
             )
             st.caption(f"Perda: {formatar_numero_pt(res['custo_desperdicio'], 2)}€")
         with m5:
@@ -394,47 +595,59 @@ def renderizar_resultados_acelerada() -> None:
 
         st.dataframe(df_evo, hide_index=True, width="stretch")
 
-        # 2. Comparação Direta: Desperdíci0% vs. Lidl
         base = res.get("comparacao_baseline")
         if base:
             st.divider()
             st.markdown("### ⚖️ Comparação Direta: Desperdíci0% vs. Lidl")
-            st.caption("Mesmo catálogo (200 produtos), mesmos 500 lotes iniciais e mesmas perturbações diárias.")
+            n_prods = res.get("total_produtos") or len(st.session_state.get("catalogo_simulado") or [])
+            n_lotes = res.get("total_lotes_iniciais") or len(st.session_state.get("lotes_simulados") or [])
+            n_prods_sim = res.get("total_produtos_simulados")
+            n_lotes_sim = res.get("total_lotes_simulados")
+            if n_prods and n_lotes and n_prods_sim is not None and n_lotes_sim is not None:
+                st.caption(
+                    f"Catálogo base com {n_prods} produtos e {n_lotes} lotes iniciais "
+                    f"(contabilizados na simulação: {n_prods_sim} produtos e {n_lotes_sim} lotes) "
+                    "e mesmas perturbações diárias."
+                )
+            elif n_prods and n_lotes:
+                st.caption(
+                    f"Catálogo base com {n_prods} produtos, {n_lotes} lotes iniciais e mesmas perturbações diárias."
+                )
+            else:
+                st.caption(
+                    "Mesmo catálogo base, mesmos lotes iniciais e mesmas perturbações diárias."
+                )
 
             ganho_ts = res["ts_pct"] - base["ts_pct"]
-            reducao_desp_un = base["total_desperdicadas"] - res["total_desperdicadas"]
-            reducao_desp_pct = (reducao_desp_un / max(1.0, base["total_desperdicadas"])) * 100
+            reducao_desp_kg = base["total_desperdicadas"] - res["total_desperdicadas"]
+            reducao_desp_pct = (reducao_desp_kg / max(1.0, base["total_desperdicadas"])) * 100
             poupanca_custo = base["custo_desperdicio"] - res["custo_desperdicio"]
             dif_receita = res["receita_total"] - base["receita_total"]
             enc_lidl = base.get(
                 "total_encaminhadas_total",
                 base.get("total_doadas_cozinha", 0.0) + base.get("total_racao_valorizacao", 0.0),
             )
-            dif_enc = res["total_doadas_cozinha"] - enc_lidl
+            dif_enc = enc_nosso - enc_lidl
 
             c1, c2, c3, c4 = st.columns(4)
-
             with c1:
                 st.metric(
                     label="Ganho Taxa de Salvamento (TS)",
                     value=_formatar_delta_pt(ganho_ts, " p.p.", 1),
                     delta_color="normal",
                 )
-
             with c2:
                 st.metric(
                     label="Desperdício Evitado",
-                    value=_formatar_delta_pt(reducao_desp_un, " un/kg", 0),
+                    value=_formatar_delta_pt(reducao_desp_kg, " kg", 0),
                     delta_color="inverse",
                 )
-
             with c3:
                 st.metric(
                     label="Custo de Perdas Evitado",
                     value=_formatar_delta_pt(poupanca_custo, "€", 2),
                     delta_color="inverse",
                 )
-
             with c4:
                 st.metric(
                     label="Variação de Receita",
@@ -459,18 +672,18 @@ def renderizar_resultados_acelerada() -> None:
                 },
                 {
                     "Indicador": "Alimentos Desperdiçados (Lixo)",
-                    "Lidl": f"{formatar_numero_pt(base['total_desperdicadas'], 0)} un/kg",
-                    "Desperdíci0%": f"{formatar_numero_pt(res['total_desperdicadas'], 0)} un/kg",
+                    "Lidl": f"{formatar_numero_pt(base['total_desperdicadas'], 0)} kg",
+                    "Desperdíci0%": f"{formatar_numero_pt(res['total_desperdicadas'], 0)} kg",
                     "Diferença (Desperdíci0% vs. Lidl)": (
-                        f"{_formatar_delta_pt(-reducao_desp_un, ' un/kg', 0)} "
+                        f"{_formatar_delta_pt(-reducao_desp_kg, ' kg', 0)} "
                         f"({_formatar_delta_pt(-reducao_desp_pct, '%', 1)})"
                     ),
                 },
                 {
                     "Indicador": "Encaminhado (Doação / Cozinha / Ração)",
-                    "Lidl": f"{formatar_numero_pt(enc_lidl, 0)} un/kg",
-                    "Desperdíci0%": f"{formatar_numero_pt(res['total_doadas_cozinha'], 0)} un/kg",
-                    "Diferença (Desperdíci0% vs. Lidl)": _formatar_delta_pt(dif_enc, " un/kg", 0),
+                    "Lidl": f"{formatar_numero_pt(enc_lidl, 0)} kg",
+                    "Desperdíci0%": f"{formatar_numero_pt(enc_nosso, 0)} kg",
+                    "Diferença (Desperdíci0% vs. Lidl)": _formatar_delta_pt(dif_enc, " kg", 0),
                 },
                 {
                     "Indicador": "Custo Direto de Desperdício (Aquisição + Descarte)",
@@ -487,14 +700,16 @@ def renderizar_resultados_acelerada() -> None:
             ])
             st.dataframe(df_comp, hide_index=True, width="stretch")
 
-            # 3. Análise Visual por Categoria (Desperdício vs. Destino do Não Desperdiçado)
             desp_nosso = res.get("desperdicio_por_categoria") or {}
             desp_trad = (res.get("comparacao_baseline") or {}).get("desperdicio_por_categoria") or {}
             salv_nosso = res.get("salvamento_por_categoria") or {}
             salv_lidl = (res.get("comparacao_baseline") or {}).get("salvamento_por_categoria") or {}
 
             todas_cats = sorted(
-                set(desp_nosso.keys()) | set(desp_trad.keys()) | set(salv_nosso.keys()) | set(salv_lidl.keys())
+                set(desp_nosso.keys())
+                | set(desp_trad.keys())
+                | set(salv_nosso.keys())
+                | set(salv_lidl.keys())
             )
 
             if todas_cats:
@@ -512,8 +727,7 @@ def renderizar_resultados_acelerada() -> None:
                     reverse=True,
                 )
 
-                # Gráfico 1: Desperdício acumulado por categoria
-                st.markdown("**1. Desperdício acumulado por categoria (unidades/kg expirados):**")
+                st.markdown("**1. Desperdício acumulado por categoria (kg expirados):**")
                 dados_desp = []
                 for cat in ordem_cats:
                     dados_desp.append({
@@ -538,27 +752,23 @@ def renderizar_resultados_acelerada() -> None:
                             axis=alt.Axis(labelAngle=-25, labelLimit=120, title=None),
                         ),
                         xOffset=alt.XOffset("Modelo:N"),
-                        y=alt.Y("Desperdício:Q", axis=alt.Axis(title="Unidades / Kg")),
+                        y=alt.Y("Desperdício:Q", axis=alt.Axis(title="Kg")),
                         color=alt.Color(
                             "Modelo:N",
-                            scale=alt.Scale(
-                                domain=["Lidl", "Desperdíci0%"],
-                                range=["#64748b", "#0ea5e9"],
-                            ),
+                            scale=alt.Scale(domain=["Lidl", "Desperdíci0%"], range=["#64748b", "#0ea5e9"]),
                             legend=None,
                         ),
                         tooltip=[
                             alt.Tooltip("Categoria:N", title="Categoria"),
                             alt.Tooltip("Modelo:N", title="Modelo"),
-                            alt.Tooltip("Desperdício:Q", title="Expirado (un/kg)", format=".1f"),
+                            alt.Tooltip("Desperdício:Q", title="Expirado (kg)", format=".1f"),
                         ],
                     )
                     .properties(height=310)
                 )
                 st.altair_chart(grafico_desp, width="stretch")
 
-                # Gráfico 2: Destino do que não é desperdiçado
-                st.markdown("**2. Destino do que não é desperdiçado por categoria (unidades/kg salvos):**")
+                st.markdown("**2. Destino do que não é desperdiçado por categoria (kg salvos):**")
                 cols_dest = st.columns(3)
                 for col_ui, dest_col in zip(cols_dest, DESTINOS_NAO_DESPERDICIO):
                     linhas_dest = []
@@ -590,28 +800,24 @@ def renderizar_resultados_acelerada() -> None:
                                 y=alt.Y(
                                     "Quantidade:Q",
                                     axis=alt.Axis(
-                                        title="Unidades / Kg" if dest_col == DESTINOS_NAO_DESPERDICIO[0] else None
+                                        title="Kg" if dest_col == DESTINOS_NAO_DESPERDICIO[0] else None
                                     ),
                                 ),
                                 color=alt.Color(
                                     "Modelo:N",
-                                    scale=alt.Scale(
-                                        domain=["Lidl", "Desperdíci0%"],
-                                        range=["#64748b", "#0ea5e9"],
-                                    ),
+                                    scale=alt.Scale(domain=["Lidl", "Desperdíci0%"], range=["#64748b", "#0ea5e9"]),
                                     legend=None,
                                 ),
                                 tooltip=[
                                     alt.Tooltip("Categoria:N", title="Categoria"),
                                     alt.Tooltip("Modelo:N", title="Modelo"),
-                                    alt.Tooltip("Quantidade:Q", title=f"{dest_col} (un/kg)", format=".1f"),
+                                    alt.Tooltip("Quantidade:Q", title=f"{dest_col} (kg)", format=".1f"),
                                 ],
                             )
                             .properties(height=280)
                         )
                         st.altair_chart(graf_dest, width="stretch")
 
-                # Legenda única e maior no final da secção
                 st.markdown(
                     """
                     <div style="display: flex; justify-content: center; align-items: center; gap: 28px; margin-top: 8px; margin-bottom: 12px; font-size: 16px;">
@@ -629,14 +835,10 @@ def renderizar_resultados_acelerada() -> None:
                     unsafe_allow_html=True,
                 )
 
+
 def renderizar_simulador_acelerada_sidebar() -> None:
     with st.sidebar.expander("⏩ Simulação Acelerada", expanded=False):
-        n_dias = st.selectbox(
-            "Dias:",
-            [2, 5, 7],
-            index=1,
-            key="acelerada_n_dias",
-        )
+        n_dias = st.selectbox("Dias:", [2, 5, 7], index=1, key="acelerada_n_dias")
         misturar_pert = st.checkbox(
             "Injetar perturbações e clima variados",
             value=True,
@@ -647,7 +849,11 @@ def renderizar_simulador_acelerada_sidebar() -> None:
         if correr_btn:
             dias_escolhidos = int(n_dias)
             with st.spinner(f"A simular {dias_escolhidos} dias..."):
-                modo_meteo = st.session_state.get("modo_meteo_ativo", "Automático (Tempo Real - Coimbra)")
+                modo_meteo = (
+                    st.session_state.get("modo_meteo_ativo")
+                    or st.session_state.get("modo_meteo")
+                    or "Automático (Tempo Real - Coimbra)"
+                )
                 resultado = simular_horizonte_temporal(
                     dias_simulacao=dias_escolhidos,
                     modo_meteo=modo_meteo,
@@ -655,9 +861,12 @@ def renderizar_simulador_acelerada_sidebar() -> None:
                 )
                 st.session_state["resultado_acelerada"] = resultado
                 st.session_state["resultado_multidia"] = resultado
+                guardar_snapshot_cenario(_chave_cenario_atual())
+                st.session_state["ultima_chave_cenario"] = _chave_cenario_atual()
 
         if st.session_state.get("resultado_acelerada") or st.session_state.get("resultado_multidia"):
             if st.button("🗑️ Limpar Resultado", width="stretch"):
                 st.session_state.pop("resultado_acelerada", None)
                 st.session_state.pop("resultado_multidia", None)
+                guardar_snapshot_cenario(_chave_cenario_atual())
                 st.rerun()

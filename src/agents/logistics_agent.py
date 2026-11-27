@@ -2,6 +2,11 @@ import os
 from pydantic import BaseModel, Field
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
+from src.csp.constraints import (
+    CATEGORIAS_PADARIA_PASTELARIA,
+    _normalizar_categoria,
+    eh_elegivel_saco_padaria,
+)
 
 
 class DecisaoLogistica(BaseModel):
@@ -16,64 +21,65 @@ class DecisaoLogistica(BaseModel):
     )
 
 
-def _eh_elegivel_saco_padaria(lote_id: str, quota_fracao: float = 0.50) -> bool:
-    """Seleciona de forma determinística a fração alvo (ex. 50% ou 65%) dos lotes para sacos surpresa."""
-    digitos = "".join(c for c in str(lote_id) if c.isdigit())
-    if not digitos:
-        return False
-    valor = (int(digitos) % 100) / 100.0
-    return valor < max(0.0, min(1.0, quota_fracao))
-
-
 def agente_logistica_doacao(state: dict) -> dict:
     lote = state.get("lote_atual", {})
     produto = state.get("produto_catalogo", {})
-    fecho_loja_2h = state.get("fecho_loja_2h", False)
+    fecho_loja_2h = bool(state.get("fecho_loja_2h", False))
     perturbacoes = state.get("perturbacoes_ativas", [])
     quebra_clientes = "Quebra Repentina de Clientes (-50% Procura)" in perturbacoes
     contexto_rag = state.get("contexto_rag", [])
 
     nome = produto.get("nome", "Produto")
-    categoria = produto.get("categoria", "geral")
+    categoria = _normalizar_categoria(produto.get("categoria", "geral"))
+    tipo_validade = (produto.get("tipo_validade") or "consumir_ate").lower()
     unidade = produto.get("unidade_medida", "un")
-    quantidade = lote.get("quantidade_disponivel", 0.0)
-    dias = lote.get("dias_para_expirar", 3)
-    excesso = state.get("excesso_estimado", 0.0)
-    cobertura = state.get("dias_cobertura_stock", 1.0)
+    vendas_medias = float(produto.get("vendas_medias_diarias", 0.0))
+    quantidade = float(lote.get("quantidade_disponivel", 0.0))
+    dias = int(lote.get("dias_para_expirar", 3))
+    excesso = float(state.get("excesso_estimado", 0.0))
+    cobertura = float(state.get("dias_cobertura_stock", 1.0))
     parecer_inv = state.get("parecer_inventario", "")
 
     if dias <= 0:
-        if categoria == "padaria":
+        if categoria in CATEGORIAS_PADARIA_PASTELARIA:
             return {
                 "destino_proposto": "racao_animal",
                 "razao_logistica": (
-                    "Pão em fim de vida útil encaminhado para instituição de transformação em farinha "
-                    "para ração animal."
+                    "Padaria/pastelaria em fim de vida útil encaminhada para instituição de transformação "
+                    "em farinha para ração animal."
+                ),
+            }
+        if tipo_validade == "preferencia_antes":
+            return {
+                "destino_proposto": "doacao_externa",
+                "razao_logistica": (
+                    "Artigo com data de durabilidade mínima ('Consumir de preferência antes de') "
+                    "retirado de venda e encaminhado para doação externa."
                 ),
             }
         return {
             "destino_proposto": "descarte_obrigatorio",
-            "razao_logistica": "Lote expirado; retirada imediata obrigatória.",
+            "razao_logistica": "Lote expirado ('Consumir até'); retirada imediata obrigatória.",
         }
 
-    if categoria == "padaria":
+    if categoria in CATEGORIAS_PADARIA_PASTELARIA:
         lote_id = lote.get("lote_id", "")
         quota_sacos = 0.50 if (fecho_loja_2h or quebra_clientes) else 0.35
-        elegivel_saco = _eh_elegivel_saco_padaria(lote_id, quota_fracao=quota_sacos)
+        elegivel_saco = eh_elegivel_saco_padaria(lote_id, quota_fracao=quota_sacos)
 
         if dias == 1 and fecho_loja_2h and quantidade > 0:
             if elegivel_saco:
                 return {
                     "destino_proposto": "sacos_surpresa",
                     "razao_logistica": (
-                        f"A <= 2h do fecho: fração prioritária ({int(quota_sacos * 100)}%) do pão de "
-                        f"véspera ({quantidade} {unidade}, 1d) alocada a Sacos Surpresa."
+                        f"A <= 2h do fecho: fração prioritária ({int(quota_sacos * 100)}%) de "
+                        f"{categoria} ({quantidade} {unidade}, 1d) alocada a Sacos Surpresa."
                     ),
                 }
             return {
                 "destino_proposto": "prateleira_desconto",
                 "razao_logistica": (
-                    f"A <= 2h do fecho: pão de véspera ({quantidade} {unidade}, 1d) em prateleira com "
+                    f"A <= 2h do fecho: {categoria} ({quantidade} {unidade}, 1d) em prateleira com "
                     "desconto de fim de dia antes da valorização em ração animal."
                 ),
             }
@@ -83,15 +89,15 @@ def agente_logistica_doacao(state: dict) -> dict:
                 return {
                     "destino_proposto": "sacos_surpresa",
                     "razao_logistica": (
-                        f"Pão de véspera ({quantidade} {unidade}, 1d) alocado à pool de Sacos Surpresa "
-                        f"(quota dinâmica de {int(quota_sacos * 100)}%)."
+                        f"Excedente de {categoria} ({quantidade} {unidade}, 1d) alocado à pool de "
+                        f"Sacos Surpresa (quota dinâmica de {int(quota_sacos * 100)}%)."
                     ),
                 }
             return {
                 "destino_proposto": "prateleira_desconto",
                 "razao_logistica": (
-                    f"Pão de véspera ({quantidade} {unidade}, 1d) mantido em prateleira com desconto ESL "
-                    "progressivo para escoamento direto."
+                    f"Excedente de {categoria} ({quantidade} {unidade}, 1d) mantido em prateleira com "
+                    "desconto ESL progressivo para escoamento direto."
                 ),
             }
 
@@ -99,32 +105,32 @@ def agente_logistica_doacao(state: dict) -> dict:
             return {
                 "destino_proposto": "sacos_surpresa",
                 "razao_logistica": (
-                    f"A <= 2h do fecho: fração ({int(quota_sacos * 100)}%) de pão ({quantidade} {unidade}, 2d) "
-                    "alocada preventivamente a Sacos Surpresa."
+                    f"A <= 2h do fecho: fração ({int(quota_sacos * 100)}%) de {categoria} "
+                    f"({quantidade} {unidade}, 2d) alocada preventivamente a Sacos Surpresa."
                 ),
             }
 
         return {
             "destino_proposto": "prateleira_desconto",
-            "razao_logistica": "Padaria mantida em prateleira para escoamento com etiqueta ESL.",
+            "razao_logistica": "Padaria/pastelaria mantida em prateleira para escoamento com etiqueta ESL.",
         }
 
-    # Encaminhamento antecipado para não-padaria quando o excesso excede a capacidade de venda
+    # Encaminhamento antecipado para restantes categorias quando o excesso excede a capacidade de venda
     fator_cobertura_critica = 2.6 if categoria in ["laticinios", "charcutaria", "pescado", "carne"] else 3.5
     if excesso > 0 and cobertura > (dias * fator_cobertura_critica):
-        if categoria in ["pescado", "carne", "charcutaria"] and dias <= 1:
+        if categoria in ["pescado", "carne"] and dias <= 1 and (quantidade > max(0.0, vendas_medias) or fecho_loja_2h):
             return {
                 "destino_proposto": "cozinha_interna",
                 "razao_logistica": (
-                    f"Excesso crítico ({quantidade} {unidade} para {dias}d); desviado para cozinha interna."
+                    f"Último dia de vida útil ('Consumir até') em {categoria} com stock acima da venda prevista "
+                    f"({quantidade} {unidade} vs. {vendas_medias} {unidade}/dia); encaminhado para cozinha interna."
                 ),
             }
-        if dias >= 2:
+        if dias >= 2 or (dias >= 1 and tipo_validade == "preferencia_antes"):
             return {
                 "destino_proposto": "doacao_externa",
                 "razao_logistica": (
-                    f"Excesso elevado ({quantidade} {unidade}) com >= 48h de validade; encaminhado para "
-                    "doação IPSS."
+                    f"Excesso elevado ({quantidade} {unidade}) elegível para doação IPSS."
                 ),
             }
 
@@ -152,7 +158,12 @@ def agente_logistica_doacao(state: dict) -> dict:
 ### Contexto Histórico e Sazonal (RAG):
 {bloco_rag}
 
-Regra: Usa 'prateleira_desconto' sempre que seja viável escoar em loja com etiqueta ESL.
+Regras obrigatórias:
+- Usa 'prateleira_desconto' sempre que seja viável escoar em loja com etiqueta ESL.
+- Nunca escolhas 'sacos_surpresa' para categorias diferentes de 'padaria' ou 'pastelaria'.
+- Nunca escolhas 'doacao_externa' para artigos 'Consumir até' com validade < 2 dias.
+- Nunca escolhas 'racao_animal' para categorias diferentes de 'padaria' ou 'pastelaria'.
+- Para 'carne' ou 'pescado' com validade <= 1 dia sem escoamento previsto, usa 'cozinha_interna'.
 """
             decisao: DecisaoLogistica = llm.invoke([
                 SystemMessage(content="Responde de forma objetiva seguindo as regras operacionais de retalho."),

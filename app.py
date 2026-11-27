@@ -74,7 +74,7 @@ st.session_state.setdefault("historico_sessao", [])
 st.session_state.setdefault("pagina_decisoes", 0)
 
 eh_arranque_inicial = (
-    st.session_state.resultados_simulacao is None
+    not st.session_state.resultados_simulacao  # CORRIGIDO: apanha None e lista vazia
     or st.session_state.get("data_referencia_ativa") != date.today()
 )
 precisa_recalcular = eh_arranque_inicial or simular_btn
@@ -98,9 +98,13 @@ if precisa_recalcular:
             modo_meteo=modo_meteo,
         )
         snapshot = estado.pop("snapshot")
+        snapshot["resultados_simulacao"] = estado["resultados_simulacao"]
+        snapshot["logs_por_lote"] = estado["logs_por_lote"]
+        snapshot["sacos_surpresa_lista"] = estado["sacos_surpresa_lista"]
         for chave, valor in estado.items():
             st.session_state[chave] = valor
         st.session_state["modo_meteo_ativo"] = modo_meteo
+        st.session_state.pop("ultima_chave_cenario", None)  # CORRIGIDO: não apagar resultados novos
 
         if eh_arranque_inicial or not st.session_state.historico_sessao:
             st.session_state.historico_sessao = [snapshot]

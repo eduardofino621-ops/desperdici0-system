@@ -17,20 +17,43 @@ def formatar_meteo_rotulo(meteo: dict | None) -> tuple[str, str]:
     return tipo, desc
 
 
+def obter_dado_pagina(chave: str):
+    """Devolve o dado da perturbação que está a ser vista no histórico."""
+    historico = st.session_state.get("historico_sessao") or []
+    if historico:
+        idx = st.session_state.get("pagina_decisoes", len(historico) - 1)
+        idx = max(0, min(idx, len(historico) - 1))
+        if chave in historico[idx]:
+            return historico[idx][chave]
+    return st.session_state.get(chave)
+
+
 @st.dialog("🧠 Cadeia de Decisão dos Agentes", width="large")
 def mostrar_popup_agentes(lote_id: str) -> None:
-    item = st.session_state.get("logs_por_lote", {}).get(lote_id)
+    logs_map = obter_dado_pagina("logs_por_lote") or {}
+    item = logs_map.get(lote_id)
+
+    if not item:
+        for snap in reversed(st.session_state.get("historico_sessao") or []):
+            if isinstance(snap, dict) and isinstance(snap.get("logs_por_lote"), dict):
+                if lote_id in snap["logs_por_lote"]:
+                    item = snap["logs_por_lote"][lote_id]
+                    break
+
     if not item:
         st.info(
-            f"O lote **{lote_id}** tem validade superior a 5 dias, pelo que se mantém em operação normal "
-            "sem necessidade de intervenção dos agentes de IA."
+            f"O lote **{lote_id}** tem validade superior a 5 dias ou não possui registo de cadeia "
+            "para a perturbação ativa."
         )
         return
 
-    badge_risco = "🔴 Risco Crítico" if item["risco_critico"] else "🟢 Controlado"
-    badge_csp = "✅ CSP Aprovado" if item["csp_valido"] else "🛡️ Ajustado pelo CSP"
-    st.markdown(f"### {item['produto_id']} ({item['lote_id']}) — {item['nome']}")
-    st.caption(f"Validade: {item['dias']}d | {badge_risco} | Resultado: {item['preco_final']} [{badge_csp}]")
+    badge_risco = "🔴 Risco Crítico" if item.get("risco_critico") else "🟢 Controlado"
+    badge_csp = "✅ CSP Aprovado" if item.get("csp_valido") else "🛡️ Ajustado pelo CSP"
+    st.markdown(f"### {item.get('produto_id', '')} ({item.get('lote_id', lote_id)}) — {item.get('nome', 'Lote')}")
+    st.caption(
+        f"Validade: {item.get('dias', '?')}d | {badge_risco} | "
+        f"Resultado: {item.get('preco_final', 'N/D')} [{badge_csp}]"
+    )
 
     evidencias_rag = item.get("contexto_rag", [])
     with st.expander(f"📖 Contexto Recuperado via RAG ({len(evidencias_rag)} evidências)", expanded=True):
@@ -42,22 +65,31 @@ def mostrar_popup_agentes(lote_id: str) -> None:
         else:
             st.caption("Nenhuma regra sazonal ou histórica ultrapassou o limiar mínimo de similaridade para este lote.")
 
-    st.markdown(f"**1️⃣ Agente de Controlo de Inventário** *(Stock: {item['quantidade']} | Excesso previsto: {item['excesso']})*")
-    st.info(item["parecer_inventario"])
+    st.markdown(
+        f"**1️⃣ Agente de Controlo de Inventário** "
+        f"*(Stock: {item.get('quantidade', 'N/D')} | Excesso previsto: {item.get('excesso', 'N/D')})*"
+    )
+    st.info(item.get("parecer_inventario", "Sem parecer registado."))
 
-    st.markdown(f"**2️⃣ Agente de Logística e Destino Operacional** → Proposta: `{item['destino_proposto']}`")
-    st.write(item["razao_logistica"])
+    st.markdown(f"**2️⃣ Agente de Logística e Destino Operacional** → Proposta: `{item.get('destino_proposto', 'N/D')}`")
+    st.write(item.get("razao_logistica", "Sem justificação registada."))
 
-    st.markdown(f"**3️⃣ Agente de Dynamic Pricing** → Desconto Proposto: `{item['desconto_proposto']}`")
-    st.write(item["raciocinio_pricing"])
+    st.markdown(f"**3️⃣ Agente de Dynamic Pricing** → Desconto Proposto: `{item.get('desconto_proposto', 'N/D')}`")
+    st.write(item.get("raciocinio_pricing", "Sem raciocínio registado."))
 
     st.markdown("**4️⃣ Auditoria do Módulo Regulador (CSP)**")
-    if item["csp_valido"]:
-        st.success(f"Conformidade legal e financeira validada. Preço final: **{item['preco_final']}** | Destino: **{item['destino_final']}**.")
+    if item.get("csp_valido"):
+        st.success(
+            f"Conformidade legal e financeira validada. Preço final: **{item.get('preco_final', 'N/D')}** | "
+            f"Destino: **{item.get('destino_final', 'N/D')}**."
+        )
     else:
-        for erro in item["csp_erros"]:
+        for erro in item.get("csp_erros") or []:
             st.warning(f"Intervenção CSP: {erro}")
-        st.markdown(f"**Resultado Corrigido:** Desconto **{item['desconto_final']}** ({item['preco_final']}) | Destino: **{item['destino_final']}**.")
+        st.markdown(
+            f"**Resultado Corrigido:** Desconto **{item.get('desconto_final', 'N/D')}** "
+            f"({item.get('preco_final', 'N/D')}) | Destino: **{item.get('destino_final', 'N/D')}**."
+        )
 
 
 def renderizar_cartoes_kpi(kpis: dict) -> None:
@@ -91,6 +123,7 @@ def renderizar_cartoes_kpi(kpis: dict) -> None:
 
 def _ir_pagina_decisoes(novo_idx: int) -> None:
     st.session_state["pagina_decisoes"] = novo_idx
+    st.session_state["aggrid_key_v"] = st.session_state.get("aggrid_key_v", 0) + 1
 
 
 def _renderizar_tabela_resumo_html(colunas: list[str], linhas: list[list[str]]) -> None:
@@ -128,7 +161,6 @@ def renderizar_analise_decisoes(historico: list[dict]) -> None:
     snap_anterior = historico[idx_atual - 1] if idx_atual > 0 else None
     chave_prefixo = f"pag_{idx_atual}_{total_paginas}"
 
-    # 1. Bloco Azul Contextual da Página Ativa (sem SQLite)
     meteo_tipo, meteo_desc = formatar_meteo_rotulo(snapshot.get("meteorologia"))
     if idx_atual == 0:
         titulo_bloco = f"📌 **Início de Sessão:** `{snapshot.get('cenario', 'Nenhuma (Operação Normal)')}`"
@@ -142,7 +174,6 @@ def renderizar_analise_decisoes(historico: list[dict]) -> None:
         f"&nbsp;|&nbsp; 🌦️ **Meteorologia ({meteo_tipo}):** `{meteo_desc}`"
     )
 
-    # 2. Navegação por Setas (só aparece após a 1.ª perturbação; cinzenta nas extremidades)
     if total_paginas > 1:
         c_prev, c_mid, c_next = st.columns([2.2, 1.6, 2.2], vertical_alignment="center")
         with c_prev:

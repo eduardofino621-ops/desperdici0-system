@@ -2,14 +2,19 @@ import os
 from datetime import date
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
+from src.csp.constraints import _calcular_pum, _normalizar_categoria
 from src.rag.retriever import construir_query_contextual_rag
 
 
-def _calcular_pum(preco: float, produto: dict) -> str:
-    conteudo = produto.get("conteudo_liquido", 1.0)
-    un_ref = produto.get("unidade_referencia", produto.get("unidade_medida", "un"))
-    pum = preco / max(0.0001, conteudo)
-    return f"{pum:.2f} €/{un_ref}"
+def _detetar_chuva_temporal(meteo: dict | None, contexto_rag: list[dict] | None = None) -> bool:
+    """Deteta chuva ou temporal exclusivamente a partir dos dados meteorológicos reais/simulados."""
+    if not isinstance(meteo, dict):
+        return False
+    texto = " ".join(
+        str(meteo.get(k, ""))
+        for k in ("condicao", "descricao", "estado", "modo", "tipo", "alerta")
+    ).lower()
+    return any(p in texto for p in ("chuva", "temporal", "aguaceiro", "trovoada", "rain", "storm"))
 
 
 def agente_controlo_inventario(state: dict) -> dict:
@@ -27,19 +32,19 @@ def agente_controlo_inventario(state: dict) -> dict:
         )
 
     nome = produto.get("nome", "Produto Desconhecido")
-    categoria = produto.get("categoria", "geral")
+    categoria = _normalizar_categoria(produto.get("categoria", "geral"))
     unidade = produto.get("unidade_medida", "un")
-    pvp = produto.get("pvp", 0.0)
+    pvp = float(produto.get("pvp", 0.0))
     pum_str = _calcular_pum(pvp, produto)
-    desconto_campanha = produto.get("desconto_campanha", 0.0)
-    vendas_medias = produto.get("vendas_medias_diarias", 0.0)
+    desconto_campanha = float(produto.get("desconto_campanha", 0.0))
+    vendas_medias = float(produto.get("vendas_medias_diarias", 0.0))
     conservacao = produto.get("conservacao", "N/A")
 
     lote_id = lote.get("lote_id", "N/A")
-    quantidade = lote.get("quantidade_disponivel", 0.0)
+    quantidade = float(lote.get("quantidade_disponivel", 0.0))
     data_entrada = lote.get("data_entrada", "N/A")
     data_validade = lote.get("data_validade", "N/A")
-    dias_restantes = lote.get("dias_para_expirar", 3)
+    dias_restantes = int(lote.get("dias_para_expirar", 3))
     codigo_gs1 = lote.get("codigo_gs1_raw", "N/A")
     estado_lote = lote.get("estado", "ativo")
 
@@ -53,7 +58,9 @@ def agente_controlo_inventario(state: dict) -> dict:
     contexto_rag = state.get("contexto_rag", [])
     if rag and not contexto_rag:
         query_rag = construir_query_contextual_rag(produto, lote, perturbacoes, data_ref, meteo)
-        contexto_rag = rag.recuperar_contexto(query_rag, categoria=categoria, top_k=2)
+        contexto_rag = rag.recuperar_contexto(query_rag, categoria=categoria, top_k=3)
+
+    chuva_temporal = _detetar_chuva_temporal(meteo)
 
     bloco_rag = (
         "\n".join(f"- [{c['id']}] {c['texto']}" for c in contexto_rag)
@@ -85,7 +92,7 @@ Analisa o seguinte lote lido via código 2D GS1 DataMatrix na data de hoje ({dat
 - Preço de catálogo: {pvp:.2f} €/{unidade} (PUM legal: {pum_str} | Desconto campanha ativo: {desconto_campanha * 100:.0f}%)
 - Stock atual do lote: {quantidade} {unidade} (Entrada em loja: {data_entrada})
 - Data de validade: {data_validade} (Faltam {dias_restantes} dia(s))
-- Procura média histórica: {vendas_medias} {unidade}/dia
+- Procura média efetiva: {vendas_medias} {unidade}/dia
 - Cobertura de stock atual: {dias_cobertura_stock} dias (Excesso previsto ao ritmo atual: {excesso_estimado} {unidade})
 
 ### Contexto Histórico e Sazonal Recuperado (RAG):
@@ -105,6 +112,7 @@ Avalia o risco de desperdício deste lote específico considerando o contexto RA
                 "dias_cobertura_stock": dias_cobertura_stock,
                 "pum_inicial": pum_str,
                 "contexto_rag": contexto_rag,
+                "chuva_temporal": chuva_temporal,
             }
         except Exception:
             pass
@@ -121,4 +129,5 @@ Avalia o risco de desperdício deste lote específico considerando o contexto RA
         "dias_cobertura_stock": dias_cobertura_stock,
         "pum_inicial": pum_str,
         "contexto_rag": contexto_rag,
+        "chuva_temporal": chuva_temporal,
     }

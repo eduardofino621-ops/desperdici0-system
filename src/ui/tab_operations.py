@@ -77,6 +77,7 @@ def limpar_estado_cenario_atual() -> None:
     st.session_state["lotes_simulados"] = []
     st.session_state["resultado_acelerada"] = None
     st.session_state["resultado_multidia"] = None
+    st.session_state["_ultimo_token_clique_agentes"] = None
     st.session_state["aggrid_key_v"] = st.session_state.get("aggrid_key_v", 0) + 1
 
 
@@ -114,6 +115,7 @@ def restaurar_snapshot_cenario(chave: tuple | None = None) -> bool:
     st.session_state["lotes_simulados"] = list(snap.get("lotes_simulados") or [])
     st.session_state["resultado_acelerada"] = snap.get("resultado_acelerada")
     st.session_state["resultado_multidia"] = snap.get("resultado_multidia")
+    st.session_state["_ultimo_token_clique_agentes"] = None
     st.session_state["aggrid_key_v"] = st.session_state.get("aggrid_key_v", 0) + 1
     return True
 
@@ -134,17 +136,14 @@ def _sincronizar_estado_por_perturbacao() -> None:
             "resultado_multidia",
         )
     )
-    # Resultados diferentes dos da última sincronização = acabados de calcular
     resultados_novos = bool(ass_resultados) and ass_resultados != ass_anterior
 
     if chave_anterior is not None and chave_atual != chave_anterior and not resultados_novos:
-        # Só mudou o cenário: guarda o antigo e repõe (ou limpa) o novo
         if tem_estado:
             guardar_snapshot_cenario(chave_anterior)
         if not restaurar_snapshot_cenario(chave_atual):
             limpar_estado_cenario_atual()
     elif tem_estado:
-        # Mesmo cenário, ou resultados novos: pertencem ao cenário atual
         guardar_snapshot_cenario(chave_atual)
 
     st.session_state["ultima_chave_cenario"] = chave_atual
@@ -153,12 +152,17 @@ def _sincronizar_estado_por_perturbacao() -> None:
     )
 
 
-def _extrair_lote_selecionado(grid_resp: dict) -> str | None:
+def _extrair_clique_lote(grid_resp: dict) -> tuple[str, int] | None:
     sel = grid_resp.get("selected_rows")
     if isinstance(sel, pd.DataFrame) and not sel.empty and "Lote" in sel.columns:
-        return str(sel.iloc[0]["Lote"])
+        row = sel.iloc[0]
+        lote = str(row["Lote"] or "")
+        seq = int(row["_click_seq"]) if "_click_seq" in sel.columns and pd.notna(row["_click_seq"]) else 0
+        return (lote, seq) if lote else None
     if isinstance(sel, list) and len(sel) > 0 and isinstance(sel[0], dict):
-        return str(sel[0].get("Lote") or "") or None
+        lote = str(sel[0].get("Lote") or "")
+        seq = int(sel[0].get("_click_seq") or 0)
+        return (lote, seq) if lote else None
     return None
 
 
@@ -204,6 +208,7 @@ def _renderizar_tabela_operacoes() -> None:
     ass_atual = _assinatura_resultados(resultados_atuais)
     if ass_atual != st.session_state.get("ultima_ass_tabela_operacoes"):
         st.session_state["ultima_ass_tabela_operacoes"] = ass_atual
+        st.session_state["_ultimo_token_clique_agentes"] = None
         st.session_state["aggrid_key_v"] = st.session_state.get("aggrid_key_v", 0) + 1
 
     df_res = pd.DataFrame(resultados_atuais)
@@ -247,6 +252,7 @@ def _renderizar_tabela_operacoes() -> None:
 
     df_grid = df_res.copy()
     df_grid["Validade"] = df_grid["Validade"].astype(str)
+    df_grid["_click_seq"] = 0
 
     fmt_data_pt = JsCode("""
         function(params) {
@@ -260,6 +266,8 @@ def _renderizar_tabela_operacoes() -> None:
         function(params) {
             var ativo = params.data && Number(params.data.Dias) <= 5 && params.value && !String(params.value).startsWith('—');
             if (ativo) {
+                params.data._click_seq = (params.data._click_seq || 0) + 1;
+                params.api.deselectAll();
                 params.node.setSelected(true, true);
             }
         }
@@ -301,7 +309,7 @@ def _renderizar_tabela_operacoes() -> None:
     )
 
     for col_nome in df_grid.columns:
-        if col_nome == COLUNA_DECISAO_AGENTES:
+        if col_nome in (COLUNA_DECISAO_AGENTES, "_click_seq"):
             continue
         max_chars = int(df_grid[col_nome].astype(str).str.len().max())
         if col_nome == "Validade":
@@ -312,6 +320,7 @@ def _renderizar_tabela_operacoes() -> None:
             larg = int(max(85, min(360, max_chars * 8.2 + 26)))
             gb.configure_column(col_nome, width=larg, minWidth=larg)
 
+    gb.configure_column("_click_seq", hide=True)
     gb.configure_column(
         COLUNA_DECISAO_AGENTES,
         width=165,
@@ -371,11 +380,16 @@ def _renderizar_tabela_operacoes() -> None:
         fit_columns_on_grid_load=False,
     )
 
-    lote_clicado = _extrair_lote_selecionado(grid_resp)
+    clique_lote = _extrair_clique_lote(grid_resp)
     logs_disponiveis = obter_dado_pagina("logs_por_lote") or {}
-    if lote_clicado and lote_clicado in logs_disponiveis:
-        st.session_state["aggrid_key_v"] += 1
-        mostrar_popup_agentes(lote_clicado)
+    if clique_lote and clique_lote[1] > 0:
+        lote_clicado, _ = clique_lote
+        if (
+            lote_clicado in logs_disponiveis
+            and clique_lote != st.session_state.get("_ultimo_token_clique_agentes")
+        ):
+            st.session_state["_ultimo_token_clique_agentes"] = clique_lote
+            mostrar_popup_agentes(lote_clicado)
 
 
 def renderizar_aba_operacoes() -> None:
@@ -623,13 +637,22 @@ def renderizar_resultados_acelerada() -> None:
             reducao_desp_pct = (reducao_desp_kg / max(1.0, base["total_desperdicadas"])) * 100
             poupanca_custo = base["custo_desperdicio"] - res["custo_desperdicio"]
             dif_receita = res["receita_total"] - base["receita_total"]
+            lucro_lidl = base["receita_total"] - base["custo_desperdicio"]
+            lucro_nosso = res["receita_total"] - res["custo_desperdicio"]
+            ganho_lucro = dif_receita + poupanca_custo
             enc_lidl = base.get(
                 "total_encaminhadas_total",
                 base.get("total_doadas_cozinha", 0.0) + base.get("total_racao_valorizacao", 0.0),
             )
             dif_enc = enc_nosso - enc_lidl
 
-            c1, c2, c3, c4 = st.columns(4)
+            vencedor_lucro = (
+                "Maior lucro: Desperdíci0%"
+                if ganho_lucro > 0.005
+                else ("Maior lucro: Lidl" if ganho_lucro < -0.005 else "Empate de lucro")
+            )
+
+            c1, c2, c3, c4, c5 = st.columns(5)
             with c1:
                 st.metric(
                     label="Ganho Taxa de Salvamento (TS)",
@@ -654,6 +677,13 @@ def renderizar_resultados_acelerada() -> None:
                     value=_formatar_delta_pt(dif_receita, "€", 2),
                     delta_color="normal",
                 )
+            with c5:
+                st.metric(
+                    label="Ganho de Lucro Final",
+                    value=_formatar_delta_pt(ganho_lucro, "€", 2),
+                    delta_color="normal",
+                )
+                st.caption(vencedor_lucro)
 
             df_comp = pd.DataFrame([
                 {
@@ -696,6 +726,12 @@ def renderizar_resultados_acelerada() -> None:
                     "Lidl": f"{formatar_numero_pt(base['receita_total'], 2)}€",
                     "Desperdíci0%": f"{formatar_numero_pt(res['receita_total'], 2)}€",
                     "Diferença (Desperdíci0% vs. Lidl)": _formatar_delta_pt(dif_receita, "€", 2),
+                },
+                {
+                    "Indicador": "Lucro Final (Receita − Custo Desperdício)",
+                    "Lidl": f"{formatar_numero_pt(lucro_lidl, 2)}€",
+                    "Desperdíci0%": f"{formatar_numero_pt(lucro_nosso, 2)}€",
+                    "Diferença (Desperdíci0% vs. Lidl)": _formatar_delta_pt(ganho_lucro, "€", 2),
                 },
             ])
             st.dataframe(df_comp, hide_index=True, width="stretch")

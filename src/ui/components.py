@@ -28,6 +28,57 @@ def obter_dado_pagina(chave: str):
     return st.session_state.get(chave)
 
 
+def _formatar_valor_eur(valor) -> str | None:
+    if valor is None or valor == "":
+        return None
+    if isinstance(valor, (int, float)):
+        return f"{float(valor):.2f}€".replace(".", ",")
+    texto = str(valor).strip()
+    if not texto or texto.upper() == "N/D":
+        return None
+    limpo = texto.replace("€", "").replace("EUR", "").strip().replace(",", ".")
+    try:
+        num = float(limpo)
+        return f"{num:.2f}€".replace(".", ",")
+    except ValueError:
+        return texto if "€" in texto else f"{texto}€"
+
+
+def _obter_pvp_lote(lote_id: str, item: dict) -> str | None:
+    chaves_pvp = ("pvp", "PVP", "PVP (€)", "preco_base", "Preço Base", "preco_original", "preco_unitario")
+    for k in chaves_pvp:
+        if k in item and item[k] not in (None, ""):
+            fmt = _formatar_valor_eur(item[k])
+            if fmt:
+                return fmt
+
+    for fonte_chave in ("resultados_simulacao", "lotes_simulados"):
+        registos = obter_dado_pagina(fonte_chave) or st.session_state.get(fonte_chave) or []
+        for reg in registos:
+            if not isinstance(reg, dict):
+                continue
+            reg_lote = str(reg.get("Lote") or reg.get("lote_id") or reg.get("id") or "")
+            if reg_lote == str(lote_id):
+                for k in chaves_pvp:
+                    if k in reg and reg[k] not in (None, ""):
+                        fmt = _formatar_valor_eur(reg[k])
+                        if fmt:
+                            return fmt
+
+    prod_id = str(item.get("produto_id") or "")
+    if prod_id:
+        catalogo = st.session_state.get("catalogo_simulado") or []
+        for prod in catalogo:
+            if isinstance(prod, dict) and str(prod.get("produto_id") or prod.get("id") or "") == prod_id:
+                for k in chaves_pvp:
+                    if k in prod and prod[k] not in (None, ""):
+                        fmt = _formatar_valor_eur(prod[k])
+                        if fmt:
+                            return fmt
+
+    return None
+
+
 @st.dialog("🧠 Cadeia de Decisão dos Agentes", width="large")
 def mostrar_popup_agentes(lote_id: str) -> None:
     logs_map = obter_dado_pagina("logs_por_lote") or {}
@@ -69,7 +120,16 @@ def mostrar_popup_agentes(lote_id: str) -> None:
         f"**1️⃣ Agente de Controlo de Inventário** "
         f"*(Stock: {item.get('quantidade', 'N/D')} | Excesso previsto: {item.get('excesso', 'N/D')})*"
     )
-    st.info(item.get("parecer_inventario", "Sem parecer registado."))
+    pvp_fmt = _obter_pvp_lote(lote_id, item) or "N/D"
+    parecer_inv = item.get("parecer_inventario", "Sem parecer registado.")
+    if "PVP" not in parecer_inv:
+        if "PUM " in parecer_inv:
+            parecer_inv = parecer_inv.replace("PUM ", f"PVP: {pvp_fmt}, PUM ", 1)
+        elif ")." in parecer_inv:
+            parecer_inv = parecer_inv.replace(").", f", PVP: {pvp_fmt}).", 1)
+        else:
+            parecer_inv = f"{parecer_inv} (PVP: {pvp_fmt})"
+    st.info(parecer_inv)
 
     st.markdown(f"**2️⃣ Agente de Logística e Destino Operacional** → Proposta: `{item.get('destino_proposto', 'N/D')}`")
     st.write(item.get("razao_logistica", "Sem justificação registada."))
@@ -133,11 +193,12 @@ def _renderizar_tabela_resumo_html(colunas: list[str], linhas: list[list[str]]) 
     )
     trs = []
     for linha in linhas:
-        tds = "".join(
-            f'<td class="{"col-left" if i == 0 else "col-right"}">{html.escape(str(val))}</td>'
-            for i, val in enumerate(linha)
-        )
-        trs.append(f"<tr>{tds}</tr>")
+        celulas = []
+        for i, val in enumerate(linha):
+            classe = "col-left" if i == 0 else "col-right"
+            estilo = "" if i == 0 else ' style="white-space:nowrap;"'
+            celulas.append(f'<td class="{classe}"{estilo}>{html.escape(str(val))}</td>')
+        trs.append(f'<tr>{"".join(celulas)}</tr>')
 
     tabela_html = (
         f'<div class="resumo-quant-wrap"><table class="resumo-quant-table">'
@@ -258,6 +319,7 @@ def renderizar_analise_decisoes(historico: list[dict]) -> None:
             df_prev = pd.DataFrame(snap_anterior["registos_decisao"])
             df_prev = df_prev[df_prev["Dias"] <= 5]
             mapa_prev = df_prev["Decisão"].value_counts().to_dict()
+            total_lotes_prev = int(df_prev.shape[0])
 
             todas_dec = sorted(
                 set(mapa_atual.keys()) | set(mapa_prev.keys()),
@@ -267,15 +329,24 @@ def renderizar_analise_decisoes(historico: list[dict]) -> None:
 
             col_prev = "Lotes (Início Sessão)" if idx_atual == 1 else f"Perturbação #{idx_atual - 1}"
             col_atual = f"Perturbação #{idx_atual}"
-            colunas_tab = ["Decisão", "%", col_prev, col_atual, "Δ"]
+            colunas_tab = ["Decisão", "%", col_prev, col_atual, "Delta (p.p. %)"]
 
             linhas_tab = []
             for dec in todas_dec:
                 v_atual = int(mapa_atual.get(dec, 0))
                 v_prev = int(mapa_prev.get(dec, 0))
-                diff = v_atual - v_prev
-                pct_str = f"{(v_atual / max(1, total_lotes_filt)) * 100:.1f}%".replace(".", ",")
-                diff_str = f"+{diff}" if diff > 0 else str(diff)
+                pct_atual = (v_atual / max(1, total_lotes_filt)) * 100.0
+                pct_prev = (v_prev / max(1, total_lotes_prev)) * 100.0
+                diff_pp = pct_atual - pct_prev
+
+                pct_str = f"{pct_atual:.1f}%".replace(".", ",")
+                if abs(diff_pp) < 0.05:
+                    diff_str = "0,0 p.p."
+                elif diff_pp > 0:
+                    diff_str = f"+{diff_pp:.1f} p.p.".replace(".", ",")
+                else:
+                    diff_str = f"{diff_pp:.1f} p.p.".replace(".", ",")
+
                 linhas_tab.append([dec, pct_str, str(v_prev), str(v_atual), diff_str])
 
         _renderizar_tabela_resumo_html(colunas_tab, linhas_tab)

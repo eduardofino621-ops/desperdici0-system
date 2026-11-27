@@ -19,14 +19,14 @@ def obter_meteorologia_atual(
             "condicao_rag": "dia de chuva intensa temporal menor afluência quebra de clientes",
             "fator_procura": 0.70,  # Reduz procura espontânea em 30%
         }
-    if modo_override == "Simular: Calor Elevado (> 30°C)":
+    if modo_override == "Simular: Céu Limpo / Normal":
         return {
             "fonte": "Simulação Manual",
-            "descricao": "Céu limpo e calor elevado (32,5 °C)",
-            "temperatura": 32.5,
+            "descricao": "Céu limpo / normal (18,0 °C)",
+            "temperatura": 18.0,
             "precipitacao": 0.0,
-            "condicao_rag": "dias de calor elevado bebidas frescas fruta churrasco",
-            "fator_procura": 1.15,  # Aumenta procura em bebidas/frescos
+            "condicao_rag": "tempo seco operação normal",
+            "fator_procura": 1.0,
         }
 
     try:

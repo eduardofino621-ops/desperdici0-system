@@ -5,6 +5,8 @@ import sqlite3
 from pathlib import Path
 from datetime import date, datetime, timedelta
 
+SEED_FIXA = 43
+
 # ==============================================================================
 # CATÁLOGO CURADO DE ARTIGOS REAIS DE RETALHO (SEM COMBINAÇÕES ABSURDAS)
 # Cada entrada define:
@@ -194,7 +196,7 @@ class GestorBaseDadosTemporal:
     com datas de validade dinâmicas relativas à data de execução (date.today()).
     """
 
-    def __init__(self, total_produtos: int = 200, seed: int = 2026, db_path: str = "data/desperdicio.db"):
+    def __init__(self, total_produtos: int = 200, seed: int = SEED_FIXA, db_path: str = "data/desperdicio.db"):
         self.total_produtos = total_produtos
         self.seed = seed
         self.db_path = Path(db_path)

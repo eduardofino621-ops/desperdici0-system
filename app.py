@@ -34,6 +34,7 @@ def _repor_dia_normal() -> None:
     st.session_state.historico_sessao = []
     st.session_state.pagina_decisoes = 0
     st.session_state.resultados_simulacao = None
+    st.session_state.perturbacoes_ativas = []
 
 
 # ==============================================================================
@@ -56,6 +57,7 @@ modo_meteo = st.sidebar.selectbox(
     "🌦️ Contexto Meteorológico (Open-Meteo):",
     [
         "Automático (Tempo Real - Coimbra)",
+        "Simular: Céu Limpo / Normal",
         "Simular: Chuva Intensa / Temporal",
         "Simular: Calor Elevado (> 30°C)",
     ],
@@ -104,6 +106,7 @@ if precisa_recalcular:
         for chave, valor in estado.items():
             st.session_state[chave] = valor
         st.session_state["modo_meteo_ativo"] = modo_meteo
+        st.session_state["perturbacoes_ativas"] = list(st.session_state.perturbacoes_acumuladas)
         st.session_state.pop("ultima_chave_cenario", None)  # CORRIGIDO: não apagar resultados novos
 
         if eh_arranque_inicial or not st.session_state.historico_sessao:

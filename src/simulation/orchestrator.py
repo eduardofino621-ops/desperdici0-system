@@ -1,10 +1,3 @@
-from src.csp.constraints import (
-    CATEGORIAS_PADARIA_PASTELARIA,
-    _normalizar_categoria,
-    eh_elegivel_saco_padaria,
-    eh_padaria_elegivel_racao,
-    validar_regras_csp,
-)
 import copy
 import math
 from concurrent.futures import ThreadPoolExecutor
@@ -18,17 +11,18 @@ from src.csp.constraints import (
     CATEGORIAS_PADARIA_PASTELARIA,
     _normalizar_categoria,
     eh_elegivel_saco_padaria,
+    eh_padaria_elegivel_racao,
     validar_regras_csp,
 )
-from src.database.db_manager import GestorBaseDadosTemporal
+from src.database.db_manager import SEED_FIXA, GestorBaseDadosTemporal
 from src.rag.retriever import RecuperadorRAG
 from src.simulation.mock_db import calcular_preco_efetivo_lote
 from src.simulation.weather_service import obter_meteorologia_atual
 
 CATEGORIAS_EXCLUIDAS_LIDL = frozenset({})
 
-SEED_SIMULACAO_PADRAO = 43
-SEED_CATALOGO_BASE = 2026
+SEED_SIMULACAO_PADRAO = SEED_FIXA
+SEED_CATALOGO_BASE = SEED_FIXA
 
 _CACHE_DATASET_BASE: dict[tuple[int, int, str], tuple[list[dict], list[dict]]] = {}
 _CACHE_METEO_AUTO: dict[str, dict] = {}
@@ -1489,7 +1483,7 @@ def simular_horizonte_temporal(
                 cat_label = cat_raw.capitalize()
 
                 if cat_raw in CATEGORIAS_PADARIA_PASTELARIA:
-                 if eh_padaria_elegivel_racao(prod):
+                    if eh_padaria_elegivel_racao(prod):
                      kg_pad = qtd_exp * peso_unit
                      qd_kg_total += kg_pad
                      racao_kg_dia += kg_pad

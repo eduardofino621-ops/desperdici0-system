@@ -20,7 +20,8 @@ from src.simulation.weather_service import obter_meteorologia_atual
 
 CATEGORIAS_EXCLUIDAS_LIDL = frozenset({})
 
-SEED_SIMULACAO_PADRAO = 43
+SEED_SIMULACAO_PADRAO = 42
+SEED_CATALOGO_BASE = 2026
 
 _CACHE_DATASET_BASE: dict[tuple[int, int, str], tuple[list[dict], list[dict]]] = {}
 _CACHE_METEO_AUTO: dict[str, dict] = {}
@@ -86,15 +87,20 @@ def _obter_dataset_base_deterministico(
     gestor: GestorBaseDadosTemporal,
     data_ref: date,
     total_produtos: int = 200,
-    seed: int = SEED_SIMULACAO_PADRAO,
+    seed: int = SEED_CATALOGO_BASE,
 ) -> tuple[list[dict], list[dict]]:
     """Gera uma única vez e reutiliza o mesmo catálogo e lotes iniciais para garantir reprodutibilidade."""
     chave = (total_produtos, seed, data_ref.isoformat())
     if chave not in _CACHE_DATASET_BASE:
+        gestor_base = GestorBaseDadosTemporal(
+            total_produtos=total_produtos,
+            seed=seed,
+            db_path=str(gestor.db_path),
+        )
         estado_global_anterior = random.getstate()
         random.seed(seed)
         try:
-            catalogo_raw, lotes_raw = gestor.gerar_dataset_temporal(data_ref=data_ref)
+            catalogo_raw, lotes_raw = gestor_base.gerar_dataset_temporal(data_ref=data_ref)
         finally:
             random.setstate(estado_global_anterior)
         _CACHE_DATASET_BASE[chave] = _normalizar_catalogo_e_lotes(catalogo_raw, lotes_raw)
@@ -551,7 +557,7 @@ def correr_simulacao(
     quebra_clientes = "Quebra Repentina de Clientes (-50% Procura)" in perturbacoes_ativas
     feriado_amanha = "Feriado / Loja Fechada Amanhã (Urgência Máxima)" in perturbacoes_ativas
     data_operacional = data_ref or date.today()
-    gestor = GestorBaseDadosTemporal(total_produtos=200, seed=seed)
+    gestor = GestorBaseDadosTemporal(total_produtos=200, seed=SEED_CATALOGO_BASE)
     rag_retriever = _obter_rag_deterministico(data_operacional, seed=seed)
     meteo = _obter_meteo_deterministica(modo_meteo)
 
@@ -559,7 +565,7 @@ def correr_simulacao(
         gestor=gestor,
         data_ref=data_operacional,
         total_produtos=200,
-        seed=seed,
+        seed=SEED_CATALOGO_BASE,
     )
     catalogo_map = {p["produto_id"]: p for p in catalogo_copia}
 
@@ -1119,14 +1125,14 @@ def simular_horizonte_temporal(
     qexp_kg_total = 0.0
     plano_dias = []
 
-    gestor = GestorBaseDadosTemporal(total_produtos=200, seed=seed)
+    gestor = GestorBaseDadosTemporal(total_produtos=200, seed=SEED_CATALOGO_BASE)
     data_inicial = data_ref or date.today()
     rag_retriever = _obter_rag_deterministico(data_inicial, seed=seed)
     catalogo_base, lotes_ativos = _obter_dataset_base_deterministico(
         gestor=gestor,
         data_ref=data_inicial,
         total_produtos=200,
-        seed=seed,
+        seed=SEED_CATALOGO_BASE,
     )
     catalogo_base_map = {p["produto_id"]: p for p in catalogo_base}
     lotes_iniciais_copia = copy.deepcopy(lotes_ativos)
@@ -1355,7 +1361,7 @@ def simular_horizonte_temporal(
                             desperdicio_por_categoria.get(cat_label, 0.0) + kg_lixo, 2
                         )
                         custo_desperdicio_total += qtd_lixo * (
-                                prod_saco.get("custo_aquisicao", 0.0) + prod_saco.get("custo_descarte", 0.0)
+                            prod_saco.get("custo_aquisicao", 0.0) + prod_saco.get("custo_descarte", 0.0)
                         )
 
         lotes_por_prod: dict[str, list[dict]] = {}
@@ -1560,7 +1566,7 @@ def simular_horizonte_temporal(
         "qvd_kg": round(qvd_kg_total, 1),
         "qd_kg": round(qd_kg_total, 1),
         "qci_kg": round(qci_kg_total, 1),
-        "qr_kg": round(qd_kg_total, 1),
+        "qr_kg": round(total_kg_racao, 1),
         "qtar_kg": round(qtar_kg_total, 1),
         "ts_pct": round(ts_pct, 2),
         "evolucao_diaria": evolucao_diaria,

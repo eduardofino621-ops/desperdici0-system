@@ -207,33 +207,27 @@ class GestorBaseDadosTemporal:
         return conn
 
     def _inicializar_sqlite(self) -> None:
-     with self._conectar() as conn:
-         conn.executescript("""
-             CREATE TABLE IF NOT EXISTS catalogo_produtos (
-                 produto_id TEXT PRIMARY KEY,
-                 gtin TEXT UNIQUE NOT NULL,
-                 nome TEXT UNIQUE NOT NULL,
-                 categoria TEXT NOT NULL,
-                 tipo_validade TEXT NOT NULL DEFAULT 'consumir_ate',
-                 unidade_medida TEXT NOT NULL,
-                 conteudo_liquido REAL NOT NULL,
-                 unidade_referencia TEXT NOT NULL,
-                 pvp REAL NOT NULL,
-                 desconto_campanha REAL NOT NULL,
-                 periodo_campanha TEXT,
-                 custo_aquisicao REAL NOT NULL,
-                 margem_minima_pct REAL NOT NULL,
-                 custo_descarte REAL NOT NULL,
-                 vendas_medias_diarias REAL NOT NULL,
-                 elasticidade_preco REAL NOT NULL,
-                 conservacao TEXT NOT NULL
-             );
-
-             cols = {row["name"] for row in conn.execute("PRAGMA table_info(catalogo_produtos)")}
-         if "tipo_validade" not in cols:
-             conn.execute(
-                 "ALTER TABLE catalogo_produtos ADD COLUMN tipo_validade TEXT NOT NULL DEFAULT 'consumir_ate'"
-             )
+        with self._conectar() as conn:
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS catalogo_produtos (
+                    produto_id TEXT PRIMARY KEY,
+                    gtin TEXT UNIQUE NOT NULL,
+                    nome TEXT UNIQUE NOT NULL,
+                    categoria TEXT NOT NULL,
+                    tipo_validade TEXT NOT NULL DEFAULT 'consumir_ate',
+                    unidade_medida TEXT NOT NULL,
+                    conteudo_liquido REAL NOT NULL,
+                    unidade_referencia TEXT NOT NULL,
+                    pvp REAL NOT NULL,
+                    desconto_campanha REAL NOT NULL,
+                    periodo_campanha TEXT,
+                    custo_aquisicao REAL NOT NULL,
+                    margem_minima_pct REAL NOT NULL,
+                    custo_descarte REAL NOT NULL,
+                    vendas_medias_diarias REAL NOT NULL,
+                    elasticidade_preco REAL NOT NULL,
+                    conservacao TEXT NOT NULL
+                );
 
                 CREATE TABLE IF NOT EXISTS inventario_lotes (
                     lote_id TEXT PRIMARY KEY,
@@ -259,6 +253,12 @@ class GestorBaseDadosTemporal:
                     desconto_medio_pct REAL NOT NULL
                 );
             """)
+
+            cols = {row["name"] for row in conn.execute("PRAGMA table_info(catalogo_produtos)")}
+            if "tipo_validade" not in cols:
+                conn.execute(
+                    "ALTER TABLE catalogo_produtos ADD COLUMN tipo_validade TEXT NOT NULL DEFAULT 'consumir_ate'"
+                )
 
     def obter_data_referencia(self, dias_avanco_simulado: int = 0) -> date:
         return date.today() + timedelta(days=dias_avanco_simulado)

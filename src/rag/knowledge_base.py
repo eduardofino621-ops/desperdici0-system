@@ -13,10 +13,10 @@ REGRAS_CONHECIMENTO = [
         "id": "Meteorologia: Dia de Chuva / Temporal",
         "categoria": "geral",
         "texto": (
-            "Dias de chuva intensa ou temporal reduzem o tráfego pedonal e as visitas espontâneas "
-            "(quebra de 20% a 40% na procura diária). Os agentes devem aplicar descontos graduais "
-            "(15% a 30% a 2 dias e 35% a 45% no último dia) para escoar perecíveis antes de recorrer "
-            "a encaminhamento externo elegível."
+          "Dias de chuva intensa ou temporal reduzem o tráfego pedonal e as visitas espontâneas "
+          "(quebra de 20% a 40% na procura diária). Os agentes devem aplicar descontos graduais "
+          "(até 30% a 2 dias e até 45% no último dia) para escoar perecíveis antes de recorrer "
+          "a encaminhamento externo elegível."
         ),
     },
     {
@@ -111,10 +111,12 @@ REGRAS_CONHECIMENTO = [
         "id": "Regra Categoria: Padaria, Pastelaria e Sacos Surpresa",
         "categoria": "padaria",
         "texto": (
-            "Produtos de padaria e pastelaria fresca têm ciclo de vida curto (24h a 48h). Durante o dia, "
-            "descontos de 25% escoam o stock em prateleira, enquanto a quota elegível para Sacos Surpresa "
-            "(35% em operação normal ou 50% com perturbação/fecho a <= 2h) recebe desconto de 45% em lotes "
-            "equilibrados de 0,50 kg antes de enviar sobras expiradas para farinha de ração animal."
+          "Produtos de padaria e pastelaria fresca têm ciclo de vida curto (24h a 48h). Durante o dia, "
+          "descontos de 25% escoam o stock em prateleira, enquanto a quota elegível para Sacos Surpresa "
+          "(35% em operação normal ou 50% com perturbação/fecho a <= 2h) recebe desconto de 45% em lotes "
+          "equilibrados de 0,50 kg. No fim de vida útil, 100% do pão simples elegível segue para farinha "
+          "de ração animal, enquanto os 9 artigos com chocolate, chouriço, ovos/gorduras doces, alho ou "
+          "nozes seguem para descarte obrigatório por segurança alimentar (SANDACH)."
         ),
     },
     {
@@ -152,24 +154,15 @@ REGRAS_CONHECIMENTO = [
         ),
     },
     {
-        "id": "Regra Categoria: Fruta e Legumes",
-        "categoria": "fruta",
-        "texto": (
-            "Fruta e legumes em pico de stock excedente perdem atratividade visual rapidamente. "
-            "Aplicar descontos graduais (20% a 30% com 2 a 3 dias e 40% ou mais no último dia, até ao teto "
-            "legal de 70%) para maximizar a receita em loja, encaminhando para doação IPSS o excesso "
-            "com >= 48h de validade."
-        ),
-    },
-    {
-        "id": "Regra Categoria: Hortícolas e Legumes Frescos",
-        "categoria": "legumes",
-        "texto": (
-            "Legumes e hortícolas frescos com excesso de stock devem receber descontos graduais "
-            "(20% a 30% com 2 a 3 dias e 40% ou mais no último dia, até ao teto legal de 70%) e só seguem "
-            "para doação IPSS quando têm pelo menos 48h de validade."
-        ),
-    },
+      "id": "Regra Categoria: Fruta Fresca",
+      "categoria": "fruta",
+      "texto": (
+          "Fruta fresca em pico de stock excedente perde atratividade visual rapidamente. "
+          "Aplicar descontos graduais (20% a 30% com 2 a 3 dias e 40% ou mais no último dia, até ao teto "
+          "legal de 70%) para maximizar a receita em loja, encaminhando para doação IPSS o excesso "
+          "severo a 48h da validade."
+      ),
+  },
 ]
 
 

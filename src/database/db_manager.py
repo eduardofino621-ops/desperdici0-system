@@ -422,13 +422,12 @@ class GestorBaseDadosTemporal:
             tem_validade_curta = idx in indices_validade_curta
 
             # 2.º BLOCO: 6 lotes na padaria | 2 lotes nas restantes categorias
-            # 2.º BLOCO: 6 lotes na padaria | 2 lotes nas restantes categorias
             if cat_nome == "padaria":
                 max_d = _max_dias_validade_padaria(nome)
                 dias_pao = sorted([rng.randint(1, max_d) for _ in range(6)])
-            if lotes_padaria_dia0 < 2 and eh_padaria_elegivel_racao({"categoria": cat_nome, "nome": nome}):
-                dias_pao[0] = 0
-                lotes_padaria_dia0 += 1
+                if lotes_padaria_dia0 < 2 and eh_padaria_elegivel_racao({"categoria": cat_nome, "nome": nome}):
+                    dias_pao[0] = 0
+                    lotes_padaria_dia0 += 1
                 especificacoes_lotes = [
                     (
                         d_exp,

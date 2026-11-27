@@ -29,7 +29,7 @@ CORES_DECISAO = {
     "Cozinha Interna": "#8B3A7B",
     "Doação (Caridade)": "#3E8E41",
     "Doação (Ração Animal)": "#CC6633",
-    "Descarte Obrigatório": "#B8433E",
+    "Desperdício (Lixo)": "#B8433E",
 }
 
 

@@ -92,6 +92,7 @@ def agente_dynamic_pricing(state: dict) -> dict:
     fecho_loja_2h = bool(state.get("fecho_loja_2h", False))
     perturbacoes = state.get("perturbacoes_ativas", [])
     quebra_clientes = "Quebra Repentina de Clientes (-50% Procura)" in perturbacoes
+    feriado_amanha = "Feriado / Loja Fechada Amanhã (Urgência Máxima)" in perturbacoes
     contexto_rag = state.get("contexto_rag", [])
     meteo = state.get("meteorologia")
 
@@ -176,16 +177,29 @@ def agente_dynamic_pricing(state: dict) -> dict:
             ),
         }
 
+    dias_venda_efetivos = 1 if (feriado_amanha and dias == 2) else max(1, dias)
+
+    ids_rag = " ".join(c.get("id", "") for c in contexto_rag).lower()
+    fator_rag = 1.0
+    notas_rag = []
+    if "início do mês" in ids_rag or "pico de fim de semana" in ids_rag:
+     fator_rag *= 1.10
+     notas_rag.append("maior procura sazonal (+10%)")
+    if "fim do mês" in ids_rag or "férias de agosto" in ids_rag:
+     fator_rag *= 0.90
+     notas_rag.append("menor procura sazonal (-10%)")
+    vendas_efetivas_rag = round(vendas_medias * fator_rag, 2)
+
     desc_otimo = _otimizar_desconto_curva(
-        quantidade=quantidade,
-        vendas_medias=vendas_medias,
-        dias=dias,
-        elasticidade=elasticidade,
-        pvp=pvp,
-        custo=custo,
-        custo_descarte=custo_descarte,
-        desconto_campanha=desconto_campanha,
-        teto_efetivo=teto_efetivo,
+     quantidade=quantidade,
+     vendas_medias=vendas_efetivas_rag,
+     dias=dias_venda_efetivos,
+     elasticidade=elasticidade,
+     pvp=pvp,
+     custo=custo,
+     custo_descarte=custo_descarte,
+     desconto_campanha=desconto_campanha,
+     teto_efetivo=teto_efetivo,
     )
 
     api_key = os.environ.get("OPENROUTER_API_KEY")
@@ -238,10 +252,11 @@ Regras obrigatórias:
         except Exception:
             pass
 
+    sufixo_rag = f" | Contexto RAG: {', '.join(notas_rag)}." if notas_rag else "."
     return {
         "desconto_proposto": desc_otimo,
         "raciocinio_pricing": (
-            f"Otimização por elasticidade ({elasticidade}) e cobertura ({dias}d): "
-            f"desconto ESL de {int(desc_otimo * 100)}% (teto {int(teto_efetivo * 100)}%)."
+             f"Otimização por elasticidade ({elasticidade}) e cobertura ({dias_venda_efetivos}d úteis): "
+            f"desconto ESL de {int(desc_otimo * 100)}% (teto {int(teto_efetivo * 100)}%){sufixo_rag}"
         ),
     }

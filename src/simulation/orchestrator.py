@@ -591,10 +591,10 @@ def correr_simulacao(
         for p in catalogo_copia:
             if p.get("categoria") in ["pescado", "carne"]:
                 p["vendas_medias_diarias"] = max(0.2, round(p["vendas_medias_diarias"] * 1.15, 2))
-        for lote in lotes_copia:
-            if lote["dias_para_expirar"] <= 2:
-                lote["dias_para_expirar"] = 1
-                lote["data_validade"] = data_operacional.isoformat()
+        # for lote in lotes_copia:
+        #     if lote["dias_para_expirar"] <= 2:
+        #         lote["dias_para_expirar"] = 1
+        #         lote["data_validade"] = data_operacional.isoformat()
     if "Pico de Stock Excedente em Frutas e Carne" in perturbacoes_ativas:
         fator_pico = 1.0 + PARAMETROS_LIDL["aumento_pico"]
         for lote in lotes_copia:

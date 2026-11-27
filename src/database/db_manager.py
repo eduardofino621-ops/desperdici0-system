@@ -207,26 +207,33 @@ class GestorBaseDadosTemporal:
         return conn
 
     def _inicializar_sqlite(self) -> None:
-        with self._conectar() as conn:
-            conn.executescript("""
-                CREATE TABLE IF NOT EXISTS catalogo_produtos (
-                    produto_id TEXT PRIMARY KEY,
-                    gtin TEXT UNIQUE NOT NULL,
-                    nome TEXT UNIQUE NOT NULL,
-                    categoria TEXT NOT NULL,
-                    unidade_medida TEXT NOT NULL,
-                    conteudo_liquido REAL NOT NULL,
-                    unidade_referencia TEXT NOT NULL,
-                    pvp REAL NOT NULL,
-                    desconto_campanha REAL NOT NULL,
-                    periodo_campanha TEXT,
-                    custo_aquisicao REAL NOT NULL,
-                    margem_minima_pct REAL NOT NULL,
-                    custo_descarte REAL NOT NULL,
-                    vendas_medias_diarias REAL NOT NULL,
-                    elasticidade_preco REAL NOT NULL,
-                    conservacao TEXT NOT NULL
-                );
+     with self._conectar() as conn:
+         conn.executescript("""
+             CREATE TABLE IF NOT EXISTS catalogo_produtos (
+                 produto_id TEXT PRIMARY KEY,
+                 gtin TEXT UNIQUE NOT NULL,
+                 nome TEXT UNIQUE NOT NULL,
+                 categoria TEXT NOT NULL,
+                 tipo_validade TEXT NOT NULL DEFAULT 'consumir_ate',
+                 unidade_medida TEXT NOT NULL,
+                 conteudo_liquido REAL NOT NULL,
+                 unidade_referencia TEXT NOT NULL,
+                 pvp REAL NOT NULL,
+                 desconto_campanha REAL NOT NULL,
+                 periodo_campanha TEXT,
+                 custo_aquisicao REAL NOT NULL,
+                 margem_minima_pct REAL NOT NULL,
+                 custo_descarte REAL NOT NULL,
+                 vendas_medias_diarias REAL NOT NULL,
+                 elasticidade_preco REAL NOT NULL,
+                 conservacao TEXT NOT NULL
+             );
+
+             cols = {row["name"] for row in conn.execute("PRAGMA table_info(catalogo_produtos)")}
+         if "tipo_validade" not in cols:
+             conn.execute(
+                 "ALTER TABLE catalogo_produtos ADD COLUMN tipo_validade TEXT NOT NULL DEFAULT 'consumir_ate'"
+             )
 
                 CREATE TABLE IF NOT EXISTS inventario_lotes (
                     lote_id TEXT PRIMARY KEY,
@@ -405,6 +412,7 @@ class GestorBaseDadosTemporal:
                 "gtin": gtin,
                 "nome": nome,
                 "categoria": cat_nome,
+                "tipo_validade": "preferencia_antes" if cat_nome in ("mercearia", "bebidas") else "consumir_ate",
                 "unidade_medida": unidade_prod,
                 "conteudo_liquido": conteudo_liq,
                 "unidade_referencia": un_ref,
@@ -492,18 +500,18 @@ class GestorBaseDadosTemporal:
             conn.execute("DELETE FROM catalogo_produtos")
 
             conn.executemany("""
-                INSERT INTO catalogo_produtos (
-                    produto_id, gtin, nome, categoria, unidade_medida, conteudo_liquido,
-                    unidade_referencia, pvp, desconto_campanha, periodo_campanha,
-                    custo_aquisicao, margem_minima_pct, custo_descarte,
-                    vendas_medias_diarias, elasticidade_preco, conservacao
-                ) VALUES (
-                    :produto_id, :gtin, :nome, :categoria, :unidade_medida, :conteudo_liquido,
-                    :unidade_referencia, :pvp, :desconto_campanha, :periodo_campanha,
-                    :custo_aquisicao, :margem_minima_pct, :custo_descarte,
-                    :vendas_medias_diarias, :elasticidade_preco, :conservacao
-                )
-            """, catalogo)
+             INSERT INTO catalogo_produtos (
+                 produto_id, gtin, nome, categoria, tipo_validade, unidade_medida, conteudo_liquido,
+                 unidade_referencia, pvp, desconto_campanha, periodo_campanha,
+                 custo_aquisicao, margem_minima_pct, custo_descarte,
+                 vendas_medias_diarias, elasticidade_preco, conservacao
+             ) VALUES (
+                 :produto_id, :gtin, :nome, :categoria, :tipo_validade, :unidade_medida, :conteudo_liquido,
+                 :unidade_referencia, :pvp, :desconto_campanha, :periodo_campanha,
+                 :custo_aquisicao, :margem_minima_pct, :custo_descarte,
+                 :vendas_medias_diarias, :elasticidade_preco, :conservacao
+             )
+         """, catalogo)
 
             conn.executemany("""
                 INSERT INTO inventario_lotes (
@@ -534,18 +542,18 @@ class GestorBaseDadosTemporal:
         )
 
         with self._conectar() as conn:
-            conn.execute("""
-                INSERT INTO telemetria_execucoes (
-                    timestamp, data_operacao, cenario, total_lotes,
-                    lotes_desconto_validade, desconto_medio_pct
-                ) VALUES (?, ?, ?, ?, ?, ?)
-            """, (
-                datetime.now().isoformat(),
-                data_ref.isoformat(),
-                cenario,
-                len(lotes),
-                len(lotes_validade),
-                round(desc_medio * 100, 2),
-            ))
+            conn.executemany("""
+             UPDATE inventario_lotes
+             SET desconto_validade = ?, preco_final_atual = ?, estado = ?
+             WHERE lote_id = ?
+         """, [
+             (
+                 float(l.get("desconto_validade", 0.0)),
+                 float(l.get("preco_final_atual", 0.0)),
+                 str(l.get("estado", "ativo")),
+                 str(l["lote_id"]),
+             )
+             for l in lotes
+         ])
 
         return True, f"Telemetria registada em SQLite ({self.db_path}) na data {data_ref.isoformat()}."

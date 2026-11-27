@@ -661,20 +661,30 @@ def renderizar_resultados_acelerada() -> None:
                 value=f"{formatar_numero_pt(res['taxa_desperdicio_pct'], 1)}%",
             )
 
-        qvd_str = formatar_numero_pt(res.get("qvd_kg", 0.0), 1)
-        qd_str = formatar_numero_pt(res.get("qd_kg", 0.0), 1)
-        qr_str = formatar_numero_pt(res.get("qr_kg", 0.0), 1)
-        qtar_str = formatar_numero_pt(res.get("qtar_kg", 0.0), 1)
+        qvd_val = float(res.get("qvd_kg", 0.0))
+        qd_val = float(res.get("qd_kg", 0.0))
+        qci_val = float(res.get("qci_kg", 0.0))
+        qtar_val = float(res.get("qtar_kg", 0.0))
+
+        denom_qtar = qtar_val if qtar_val > 0 else 1.0
+        qvd_pct = formatar_numero_pt((qvd_val / denom_qtar) * 100.0, 1)
+        qd_pct = formatar_numero_pt((qd_val / denom_qtar) * 100.0, 1)
+        qci_pct = formatar_numero_pt((qci_val / denom_qtar) * 100.0, 1)
+
+        qvd_str = f"{formatar_numero_pt(qvd_val, 1)} kg ({qvd_pct}%)"
+        qd_str = f"{formatar_numero_pt(qd_val, 1)} kg ({qd_pct}%)"
+        qci_str = f"{formatar_numero_pt(qci_val, 1)} kg ({qci_pct}%)"
+        qtar_str = f"{formatar_numero_pt(qtar_val, 1)} kg"
 
         st.markdown(
             f"""
             <div class="ts-info-wrapper" tabindex="0">
                 <div class="ts-info-box">
                     <span>
-                        <strong>QVD:</strong> {qvd_str} kg &nbsp;·&nbsp;
-                        <strong>QD:</strong> {qd_str} kg &nbsp;·&nbsp;
-                        <strong>QR:</strong> {qr_str} kg &nbsp;·&nbsp;
-                        <strong>QTAR:</strong> {qtar_str} kg
+                        <strong>QVD:</strong> {qvd_str} &nbsp;·&nbsp;
+                        <strong>QD:</strong> {qd_str} &nbsp;·&nbsp;
+                        <strong>QCI:</strong> {qci_str} &nbsp;·&nbsp;
+                        <strong>QTAR:</strong> {qtar_str}
                     </span>
                     <span class="ts-info-hint">ℹ️ Passe o cursor para ver a fórmula</span>
                 </div>
@@ -683,7 +693,7 @@ def renderizar_resultados_acelerada() -> None:
                         <span>TS</span>
                         <span>=</span>
                         <span class="ts-frac">
-                            <span class="ts-frac-num">QVD + QD + QR</span>
+                            <span class="ts-frac-num">QVD + QD + QCI</span>
                             <span class="ts-frac-den">QTAR</span>
                         </span>
                         <span>&times; 100</span>
@@ -691,9 +701,9 @@ def renderizar_resultados_acelerada() -> None:
                     <ul class="ts-var-list">
                         <li><strong>TS (Taxa de Salvamento):</strong> Percentagem de stock em risco de expirar que foi aproveitado e evitado de ir para o lixo.</li>
                         <li><strong>QVD (Quantidade Vendida com Desconto):</strong> Massa (kg) escoada através de descontos dinâmicos de validade (ESL) e <em>Sacos Surpresa</em>.</li>
-                        <li><strong>QD (Quantidade Doada):</strong> Massa (kg) encaminhada para instituições de solidariedade social e cozinha interna.</li>
-                        <li><strong>QR (Quantidade para Ração / Valorização):</strong> Massa (kg) de excedentes (ex.: padaria/pastelaria) valorizada para produção de ração animal.</li>
-                        <li><strong>QTAR (Quantidade Total em Risco):</strong> Total de stock crítico que atingiu o fim de vida útil no horizonte simulado (QVD + QD + QR + Desperdício).</li>
+                        <li><strong>QD (Quantidade Doada):</strong> Massa (kg) encaminhada para doação externa (IPSS) e valorização/transformação em ração animal.</li>
+                        <li><strong>QCI (Quantidade Cozinha Interna):</strong> Massa (kg) encaminhada para preparação/consumo na cozinha interna da loja.</li>
+                        <li><strong>QTAR (Quantidade Total em Risco):</strong> Total de stock crítico que atingiu o fim de vida útil no horizonte simulado (QVD + QD + QCI + Desperdício).</li>
                     </ul>
                 </div>
             </div>

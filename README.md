@@ -96,12 +96,12 @@ pytest -v
 
 O desempenho do sistema é medido através da **Taxa de Salvamento (TS)** em massa ($\text{kg}$), complementada pela **Taxa de Desperdício Global**, **Custo Direto de Desperdício Evitado (€)** e **Receita Total de Vendas (€)**:
 
-- **Fórmula:** `TS = ((QVD + QD + QR) / QTAR) × 100`
-- **Legenda:**
-  - `QVD` = Quantidade Vendida com Desconto / Sacos Surpresa ($\text{kg}$)
-  - `QD` = Quantidade Doada / Cozinha Interna ($\text{kg}$)
-  - `QR` = Quantidade Reaproveitada / Ração Animal ($\text{kg}$)
-  - `QTAR` = Quantidade Total de Alimentos em Risco ($\text{kg}$)
+- Fórmula: TS = ((QVD + QD + QCI) / QTAR) × 100
+- Legenda:
+  - QVD = Quantidade Vendida com Desconto (kg)
+  - QD = Quantidade Doada (kg)
+  - QCI = Quantidade Cozinha Interna (kg)
+  - QTAR = Quantidade Total de Alimentos em Risco (kg)
 - **Objetivo:** Alcançar uma Taxa de Salvamento superior a **90%**, preservando a receita comercial face à baseline tradicional.
 
 ---

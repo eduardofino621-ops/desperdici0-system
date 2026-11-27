@@ -737,7 +737,6 @@ def correr_simulacao(
     else:
         db_ok, db_msg = True, "Telemetria já registada para este cenário."
 
-    # KPIs iniciais continuam a contabilizar todo o catálogo/lotes
     total_prods = len(catalogo_copia)
     prods_validade_curta = len({l["produto_id"] for l in lotes_copia if l["dias_para_expirar"] <= 5})
     prods_campanha = sum(1 for p in catalogo_copia if p["desconto_campanha"] > 0)
@@ -1115,8 +1114,8 @@ def simular_horizonte_temporal(
     data_ref: date | None = None,
 ) -> dict:
     qvd_kg_total = 0.0
-    qd_kg_total = 0.0
-    qr_kg_total = 0.0
+    qd_kg_total = 0.0      # Doação externa + Ração animal
+    qci_kg_total = 0.0     # Cozinha interna
     qexp_kg_total = 0.0
     plano_dias = []
 
@@ -1274,7 +1273,6 @@ def simular_horizonte_temporal(
         desperdicadas_kg_dia = 0.0
         receita_dia = 0.0
 
-        # Procura diária determinística por produto (descontada pelos Sacos Surpresa vendidos)
         procura_por_prod: dict[str, float] = {}
         for pid, prod in catalogo_dia_map.items():
             if _normalizar_categoria(prod.get("categoria"), default="outros") in CATEGORIAS_EXCLUIDAS_LIDL:
@@ -1325,7 +1323,6 @@ def simular_horizonte_temporal(
                     abat = min(l["quantidade_disponivel"], q_cons)
                     if abat <= 0:
                         continue
-                    # Se o lote ainda tem >1 dia de validade, permanece em loja para o dia seguinte
                     if int(l.get("dias_para_expirar", 1)) > 1:
                         continue
 
@@ -1343,7 +1340,7 @@ def simular_horizonte_temporal(
                             salvamento_por_categoria, cat_saco, "Doação / Cozinha", kg_abat
                         )
                     elif dest_pos == "racao_animal":
-                        qr_kg_total += kg_abat
+                        qd_kg_total += kg_abat
                         racao_kg_dia += kg_abat
                         _registar_salvamento_categoria(
                             salvamento_por_categoria, cat_saco, "Ração / Valorização", kg_abat
@@ -1411,14 +1408,20 @@ def simular_horizonte_temporal(
                 qtd_enc = lote["quantidade_disponivel"]
                 kg_lote = qtd_enc * peso_unit
 
-                if dest in ["doacao_externa", "cozinha_interna"]:
+                if dest == "cozinha_interna":
+                    qci_kg_total += kg_lote
+                    doadas_kg_dia += kg_lote
+                    _registar_salvamento_categoria(
+                        salvamento_por_categoria, prod.get("categoria", "outros"), "Doação / Cozinha", kg_lote
+                    )
+                elif dest == "doacao_externa":
                     qd_kg_total += kg_lote
                     doadas_kg_dia += kg_lote
                     _registar_salvamento_categoria(
                         salvamento_por_categoria, prod.get("categoria", "outros"), "Doação / Cozinha", kg_lote
                     )
                 else:
-                    qr_kg_total += kg_lote
+                    qd_kg_total += kg_lote
                     racao_kg_dia += kg_lote
                     _registar_salvamento_categoria(
                         salvamento_por_categoria, prod.get("categoria", "outros"), "Ração / Valorização", kg_lote
@@ -1464,7 +1467,7 @@ def simular_horizonte_temporal(
 
                 if cat_raw in CATEGORIAS_PADARIA_PASTELARIA:
                     kg_pad = qtd_exp * peso_unit
-                    qr_kg_total += kg_pad
+                    qd_kg_total += kg_pad
                     racao_kg_dia += kg_pad
                     _registar_salvamento_categoria(
                         salvamento_por_categoria, cat_raw, "Ração / Valorização", kg_pad
@@ -1522,8 +1525,8 @@ def simular_horizonte_temporal(
     total_movimentado = max(1.0, total_kg_vendidas + total_encaminhadas_total + total_kg_desperdicadas)
     taxa_desperdicio_pct = (total_kg_desperdicadas / total_movimentado) * 100
 
-    qtar_kg_total = qvd_kg_total + qd_kg_total + qr_kg_total + qexp_kg_total
-    ts_pct = ((qvd_kg_total + qd_kg_total + qr_kg_total) / max(0.01, qtar_kg_total)) * 100
+    qtar_kg_total = qvd_kg_total + qd_kg_total + qci_kg_total + qexp_kg_total
+    ts_pct = ((qvd_kg_total + qd_kg_total + qci_kg_total) / max(0.01, qtar_kg_total)) * 100
 
     baseline = _simular_baseline_lidl(
         catalogo_base,
@@ -1554,7 +1557,8 @@ def simular_horizonte_temporal(
         "custo_desperdicio": round(custo_desperdicio_total, 2),
         "qvd_kg": round(qvd_kg_total, 1),
         "qd_kg": round(qd_kg_total, 1),
-        "qr_kg": round(qr_kg_total, 1),
+        "qci_kg": round(qci_kg_total, 1),
+        "qr_kg": round(qd_kg_total, 1),
         "qtar_kg": round(qtar_kg_total, 1),
         "ts_pct": round(ts_pct, 2),
         "evolucao_diaria": evolucao_diaria,

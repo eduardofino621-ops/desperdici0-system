@@ -115,27 +115,36 @@ def agente_logistica_doacao(state: dict) -> dict:
             "razao_logistica": "Padaria/pastelaria mantida em prateleira para escoamento com etiqueta ESL.",
         }
 
-    # Encaminhamento antecipado para restantes categorias quando o excesso excede a capacidade de venda
-    fator_cobertura_critica = 2.6 if categoria in ["laticinios", "charcutaria", "pescado", "carne"] else 3.5
-    if excesso > 0 and cobertura > (dias * fator_cobertura_critica):
-        if categoria in ["pescado", "carne"] and dias <= 1 and (quantidade > max(0.0, vendas_medias) or fecho_loja_2h):
-            return {
-                "destino_proposto": "cozinha_interna",
-                "razao_logistica": (
-                    f"Último dia de vida útil ('Consumir até') em {categoria} com stock acima da venda prevista "
-                    f"({quantidade} {unidade} vs. {vendas_medias} {unidade}/dia); encaminhado para cozinha interna."
-                ),
-            }
-        if dias >= 2 or (dias >= 1 and tipo_validade == "preferencia_antes"):
-            return {
-                "destino_proposto": "doacao_externa",
-                "razao_logistica": (
-                    f"Excesso elevado ({quantidade} {unidade}) elegível para doação IPSS."
-                ),
-            }
+    # Capacidade estimada de escoamento em prateleira já contando com desconto ESL (ex.: 35%)
+    elasticidade = float(produto.get("elasticidade_preco", 1.2))
+    desc_ref_esl = 0.35 if dias <= 2 else 0.25
+    procura_com_desconto = vendas_medias * (1.0 + desc_ref_esl * elasticidade) * max(1, dias)
+    racio_excesso_real = quantidade / max(0.1, procura_com_desconto)
+
+    # 1. Último dia de carne/pescado sem escoamento previsto -> Cozinha Interna
+    if categoria in ["pescado", "carne"] and dias <= 1 and (racio_excesso_real > 1.35 or fecho_loja_2h):
+        return {
+            "destino_proposto": "cozinha_interna",
+            "razao_logistica": (
+                f"Último dia de vida útil ('Consumir até') em {categoria} com stock acima da venda prevista "
+                f"mesmo com desconto ({quantidade} {unidade} vs. {procura_com_desconto:.1f} {unidade}); "
+                "encaminhado para cozinha interna."
+            ),
+        }
+
+    # 2. Doação externa IPSS apenas na última janela elegível (dias == 2) e perante excedente real
+    fator_doacao_critica = 1.65 if categoria in ["laticinios", "charcutaria", "pescado", "carne"] else 2.0
+    if excesso > 0 and dias == 2 and racio_excesso_real > fator_doacao_critica:
+        return {
+            "destino_proposto": "doacao_externa",
+            "razao_logistica": (
+                f"Excedente severo a 48h da validade ({quantidade} {unidade} vs. procura com ESL "
+                f"{procura_com_desconto:.1f} {unidade}); encaminhado para doação IPSS."
+            ),
+        }
 
     api_key = os.environ.get("OPENROUTER_API_KEY")
-    if api_key and excesso > 0 and cobertura > (dias * 2.0):
+    if api_key and excesso > 0 and dias <= 2 and racio_excesso_real > 1.4:
         try:
             llm = ChatOpenAI(
                 model="deepseek/deepseek-chat",
@@ -153,13 +162,13 @@ def agente_logistica_doacao(state: dict) -> dict:
             prompt = f"""
 És o Agente de Logística de uma superfície comercial. Define o destino deste lote:
 - Artigo: {nome} (Categoria: {categoria}) | Stock: {quantidade} {unidade} | Validade: {dias} dia(s)
-- Excesso estimado: {excesso} {unidade} | Parecer Inventário: {parecer_inv}
+- Procura prevista com desconto ESL: {procura_com_desconto:.1f} {unidade} | Parecer Inventário: {parecer_inv}
 
 ### Contexto Histórico e Sazonal (RAG):
 {bloco_rag}
 
 Regras obrigatórias:
-- Usa 'prateleira_desconto' sempre que seja viável escoar em loja com etiqueta ESL.
+- Prioriza SEMPRE 'prateleira_desconto' para maximizar receita; só uses 'doacao_externa' em último recurso quando o stock exceder muito a procura com desconto.
 - Nunca escolhas 'sacos_surpresa' para categorias diferentes de 'padaria' ou 'pastelaria'.
 - Nunca escolhas 'doacao_externa' para artigos 'Consumir até' com validade < 2 dias.
 - Nunca escolhas 'racao_animal' para categorias diferentes de 'padaria' ou 'pastelaria'.

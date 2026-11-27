@@ -1336,11 +1336,11 @@ def simular_horizonte_temporal(
                     cat_saco = prod_saco.get("categoria", "padaria")
                     l["quantidade_disponivel"] = round(l["quantidade_disponivel"] - abat, 2)
 
-                    # 40% para doação e os restantes 60% para o lixo
+                    # 50% para doação e os restantes 50% para o lixo
                     if prod_saco.get("unidade_medida") == "kg":
-                        qtd_doada = round(abat * 0.40, 2)
+                        qtd_doada = round(abat * 0.50, 2)
                     else:
-                        qtd_doada = float(int(abat * 0.40 + 1e-9))
+                        qtd_doada = float(int(abat * 0.50 + 1e-9))
                     qtd_lixo = round(max(0.0, abat - qtd_doada), 2)
 
                     kg_doada = qtd_doada * _peso_unitario_produto(prod_saco)

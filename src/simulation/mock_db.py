@@ -1,9 +1,14 @@
-from datetime import date
-from src.database.db_manager import GestorBaseDadosTemporal
+from src.database.db_manager import (
+    DATA_REFERENCIA_FIXA,
+    SEED_FIXA,
+    GestorBaseDadosTemporal,
+)
 
-gestor_db = GestorBaseDadosTemporal(total_produtos=200, seed=2026)
+gestor_db = GestorBaseDadosTemporal(total_produtos=200, seed=SEED_FIXA)
 
-CATALOGO_PRODUTOS, INVENTARIO_LOTES = gestor_db.gerar_dataset_temporal(data_ref=date.today())
+CATALOGO_PRODUTOS, INVENTARIO_LOTES = gestor_db.gerar_dataset_temporal(
+    data_ref=DATA_REFERENCIA_FIXA
+)
 
 
 def calcular_pum(preco_atual: float, produto: dict) -> str:

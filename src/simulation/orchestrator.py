@@ -947,7 +947,7 @@ def _simular_baseline_lidl(
         for pid, prod in catalogo.items():
             if _normalizar_categoria(prod.get("categoria"), default="outros") in CATEGORIAS_EXCLUIDAS_LIDL:
                 continue
-            rng = random.Random(f"{cfg['semente']}-{n_dia}-{pid}")
+            rng = random.Random(f"{cfg['semente']}-procura-{n_dia}-{pid}")
             fator_cat_meteo = (
                 fator_meteo
                 if (fator_meteo < 1.0 or prod.get("categoria") in ("bebidas", "fruta", "carne", "pescado"))

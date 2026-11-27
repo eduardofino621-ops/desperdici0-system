@@ -1208,8 +1208,6 @@ def simular_horizonte_temporal(
             if lote["quantidade_disponivel"] <= 0 or lote.get("estado") in ["expirado", "encaminhado", "lixo"]:
                 continue
             dias_originais_dia[idx] = lote["dias_para_expirar"]
-            if feriado_amanha and lote["dias_para_expirar"] <= 2:
-                lote["dias_para_expirar"] = 1
 
         fator_sacos_dia = 0.50 if (fecho_2h or quebra_clientes) else 0.35
         stock_padaria_urgente = _calcular_stock_padaria_elegivel_sacos(

@@ -33,6 +33,7 @@ def agente_logistica_doacao(state: dict) -> dict:
     fecho_loja_2h = bool(state.get("fecho_loja_2h", False))
     perturbacoes = state.get("perturbacoes_ativas", [])
     quebra_clientes = "Quebra Repentina de Clientes (-50% Procura)" in perturbacoes
+    feriado_amanha = "Feriado / Loja Fechada Amanhã (Urgência Máxima)" in perturbacoes
     contexto_rag = state.get("contexto_rag", [])
 
     nome = produto.get("nome", "Produto")
@@ -132,7 +133,8 @@ def agente_logistica_doacao(state: dict) -> dict:
     # Capacidade estimada de escoamento em prateleira já contando com desconto ESL (ex.: 35%)
     elasticidade = float(produto.get("elasticidade_preco", 1.2))
     desc_ref_esl = 0.35 if dias <= 2 else 0.25
-    procura_com_desconto = vendas_medias * (1.0 + desc_ref_esl * elasticidade) * max(1, dias)
+    dias_venda_efetivos = 1 if (feriado_amanha and dias == 2) else max(1, dias)
+    procura_com_desconto = vendas_medias * (1.0 + desc_ref_esl * elasticidade) * dias_venda_efetivos
     racio_excesso_real = quantidade / max(0.1, procura_com_desconto)
 
     # 1. Último dia de carne/pescado sem escoamento previsto -> Cozinha Interna

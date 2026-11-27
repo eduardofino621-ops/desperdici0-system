@@ -1,3 +1,4 @@
+from src.csp.constraints import eh_padaria_elegivel_racao
 import re
 import random
 import sqlite3
@@ -336,7 +337,8 @@ class GestorBaseDadosTemporal:
         catalogo: list[dict] = []
         lotes: list[dict] = []
         contador_lote = 1000
-
+        
+        lotes_padaria_dia0 = 0
         for idx in indices_todos:
             prod_id = f"PROD-{idx:04d}"
             gtin = _gerar_gtin13(idx)
@@ -420,11 +422,19 @@ class GestorBaseDadosTemporal:
             tem_validade_curta = idx in indices_validade_curta
 
             # 2.º BLOCO: 6 lotes na padaria | 2 lotes nas restantes categorias
+            # 2.º BLOCO: 6 lotes na padaria | 2 lotes nas restantes categorias
             if cat_nome == "padaria":
                 max_d = _max_dias_validade_padaria(nome)
                 dias_pao = sorted([rng.randint(1, max_d) for _ in range(6)])
+            if lotes_padaria_dia0 < 2 and eh_padaria_elegivel_racao({"categoria": cat_nome, "nome": nome}):
+                dias_pao[0] = 0
+                lotes_padaria_dia0 += 1
                 especificacoes_lotes = [
-                    (d_exp, max(3, int(round(vendas_dia * rng.uniform(0.5, 1.4)))), rng.randint(0, 1))
+                    (
+                        d_exp,
+                        max(3, int(round(vendas_dia * rng.uniform(0.5, 1.4)))),
+                        max(1, rng.randint(0, 1)) if d_exp == 0 else rng.randint(0, 1),
+                    )
                     for d_exp in dias_pao
                 ]
             elif idx == 1:

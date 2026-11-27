@@ -1296,10 +1296,29 @@ def simular_horizonte_temporal(
             if l is not None and reservada > 0:
                 l["quantidade_disponivel"] = round(l["quantidade_disponivel"] + reservada, 2)
 
-        taxa_venda_sacos = 0.65 if quebra_clientes else 0.90
-        for idx_saco, saco in enumerate(sacos_dia):
-            rng_saco = random.Random(f"{seed}-saco-{dia_idx}-{idx_saco}")
-            vendido_saco = rng_saco.random() <= taxa_venda_sacos
+        pids_nos_sacos = {
+            lotes_by_id[lid]["produto_id"]
+            for saco in sacos_dia
+            for lid in (saco.get("lotes_consumo") or {})
+            if lid in lotes_by_id
+        }
+        fator_janela_saco = PARAMETROS_LIDL["fator_janela_saco"]
+        procura_sacos_kg_restante = 0.0
+        for pid_s in pids_nos_sacos:
+            prod_s = catalogo_dia_map.get(pid_s, {})
+            elast_s = float(prod_s.get("elasticidade_preco", 1.2))
+            procura_sacos_kg_restante += (
+                procura_por_prod.get(pid_s, 0.0)
+                * _peso_unitario_produto(prod_s)
+                * (1.0 + 0.45 * elast_s)
+                * fator_janela_saco
+            )
+
+        for saco in sacos_dia:
+            peso_saco = float(saco.get("peso_kg", 0.50))
+            vendido_saco = procura_sacos_kg_restante + 1e-9 >= peso_saco
+            if vendido_saco:
+                procura_sacos_kg_restante = max(0.0, procura_sacos_kg_restante - peso_saco)
             saco["vendido"] = vendido_saco
             if vendido_saco:
                 receita_dia += saco["preco_final"]

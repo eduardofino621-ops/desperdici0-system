@@ -646,12 +646,6 @@ def renderizar_resultados_acelerada() -> None:
             )
             dif_enc = enc_nosso - enc_lidl
 
-            vencedor_lucro = (
-                "Maior lucro: Desperdíci0%"
-                if ganho_lucro > 0.005
-                else ("Maior lucro: Lidl" if ganho_lucro < -0.005 else "Empate de lucro")
-            )
-
             c1, c2, c3, c4, c5 = st.columns(5)
             with c1:
                 st.metric(
@@ -683,7 +677,6 @@ def renderizar_resultados_acelerada() -> None:
                     value=_formatar_delta_pt(ganho_lucro, "€", 2),
                     delta_color="normal",
                 )
-                st.caption(vencedor_lucro)
 
             df_comp = pd.DataFrame([
                 {

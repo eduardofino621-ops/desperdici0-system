@@ -329,7 +329,7 @@ def renderizar_analise_decisoes(historico: list[dict]) -> None:
 
             col_prev = "Lotes (Início Sessão)" if idx_atual == 1 else f"Perturbação #{idx_atual - 1}"
             col_atual = f"Perturbação #{idx_atual}"
-            colunas_tab = ["Decisão", "%", col_prev, col_atual, "Delta (p.p. %)"]
+            colunas_tab = ["Decisão", "%", col_prev, col_atual, "Diferença (p.p.)"]
 
             linhas_tab = []
             for dec in todas_dec:
@@ -341,11 +341,11 @@ def renderizar_analise_decisoes(historico: list[dict]) -> None:
 
                 pct_str = f"{pct_atual:.1f}%".replace(".", ",")
                 if abs(diff_pp) < 0.05:
-                    diff_str = "0,0 p.p."
+                    diff_str = "0,0"
                 elif diff_pp > 0:
-                    diff_str = f"+{diff_pp:.1f} p.p.".replace(".", ",")
+                    diff_str = f"+{diff_pp:.1f}".replace(".", ",")
                 else:
-                    diff_str = f"{diff_pp:.1f} p.p.".replace(".", ",")
+                    diff_str = f"{diff_pp:.1f}".replace(".", ",")
 
                 linhas_tab.append([dec, pct_str, str(v_prev), str(v_atual), diff_str])
 

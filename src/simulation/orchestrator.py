@@ -18,7 +18,14 @@ from src.rag.retriever import RecuperadorRAG
 from src.simulation.mock_db import calcular_preco_efetivo_lote
 from src.simulation.weather_service import obter_meteorologia_atual
 
-CATEGORIAS_EXCLUIDAS_LIDL = frozenset({"charcutaria"})
+CATEGORIAS_EXCLUIDAS_LIDL = frozenset({})
+
+SEED_SIMULACAO_PADRAO = 42
+
+_CACHE_DATASET_BASE: dict[tuple[int, int, str], tuple[list[dict], list[dict]]] = {}
+_CACHE_METEO_AUTO: dict[str, dict] = {}
+_CACHE_RAG: dict[tuple[str, int], RecuperadorRAG] = {}
+_TELEMETRIA_REGISTADA: set[tuple[str, str]] = set()
 
 MAPA_DESTINOS = {
     "prateleira_desconto": "Prateleira (Etiqueta ESL)",
@@ -54,7 +61,7 @@ PARAMETROS_LIDL = {
     "reposicao_automatica": False,
     "cobertura_dias": 2.0,
     "aumento_pico": 0.40,
-    "semente": 2026,
+    "semente": SEED_SIMULACAO_PADRAO,
 }
 
 _ESTADOS_FORA = ("esgotado", "expirado", "valorizado", "doado_realimenta")
@@ -73,6 +80,45 @@ def _normalizar_catalogo_e_lotes(
 
     lotes_norm = [copy.deepcopy(l) for l in lotes]
     return catalogo_norm, lotes_norm
+
+
+def _obter_dataset_base_deterministico(
+    gestor: GestorBaseDadosTemporal,
+    data_ref: date,
+    total_produtos: int = 200,
+    seed: int = SEED_SIMULACAO_PADRAO,
+) -> tuple[list[dict], list[dict]]:
+    """Gera uma única vez e reutiliza o mesmo catálogo e lotes iniciais para garantir reprodutibilidade."""
+    chave = (total_produtos, seed, data_ref.isoformat())
+    if chave not in _CACHE_DATASET_BASE:
+        estado_global_anterior = random.getstate()
+        random.seed(seed)
+        try:
+            catalogo_raw, lotes_raw = gestor.gerar_dataset_temporal(data_ref=data_ref)
+        finally:
+            random.setstate(estado_global_anterior)
+        _CACHE_DATASET_BASE[chave] = _normalizar_catalogo_e_lotes(catalogo_raw, lotes_raw)
+
+    cat_cached, lotes_cached = _CACHE_DATASET_BASE[chave]
+    return copy.deepcopy(cat_cached), copy.deepcopy(lotes_cached)
+
+
+def _obter_rag_deterministico(data_ref: date, seed: int = SEED_SIMULACAO_PADRAO) -> RecuperadorRAG:
+    chave = (data_ref.isoformat(), seed)
+    if chave not in _CACHE_RAG:
+        _CACHE_RAG[chave] = RecuperadorRAG()
+    return _CACHE_RAG[chave]
+
+
+def _obter_meteo_deterministica(modo_override: str) -> dict:
+    """Garante que a leitura automática não muda entre execuções da mesma sessão."""
+    if modo_override == "Automático (Tempo Real - Coimbra)":
+        if modo_override not in _CACHE_METEO_AUTO:
+            _CACHE_METEO_AUTO[modo_override] = copy.deepcopy(
+                obter_meteorologia_atual(modo_override=modo_override)
+            )
+        return copy.deepcopy(_CACHE_METEO_AUTO[modo_override])
+    return copy.deepcopy(obter_meteorologia_atual(modo_override=modo_override))
 
 
 def _lote_contabilizado_simulacao(lote: dict, catalogo_map: dict[str, dict]) -> bool:
@@ -261,6 +307,7 @@ def construir_sacos_surpresa_equilibrados(
     peso_alvo_kg: float = 0.50,
     max_sacos: int | None = None,
     fator_producao: float = 0.50,
+    seed: int = SEED_SIMULACAO_PADRAO,
 ) -> list[dict]:
     if max_sacos is None:
         max_sacos = calcular_max_sacos_padaria(
@@ -296,7 +343,7 @@ def construir_sacos_surpresa_equilibrados(
     if sum(u["peso_kg"] for u in pool_unidades) < peso_alvo_kg:
         return []
 
-    rng = random.Random(2026)
+    rng = random.Random(seed)
     rng.shuffle(pool_unidades)
 
     sacos, saco_atual, peso_atual = [], [], 0.0
@@ -497,20 +544,26 @@ def correr_simulacao(
     cenario_perturbacao: str,
     perturbacoes_ativas: list[str],
     modo_meteo: str = "Automático (Tempo Real - Coimbra)",
+    seed: int = SEED_SIMULACAO_PADRAO,
+    data_ref: date | None = None,
 ) -> dict:
     fecho_loja_2h = "A menos de 2 horas de fechar a loja." in perturbacoes_ativas
     quebra_clientes = "Quebra Repentina de Clientes (-50% Procura)" in perturbacoes_ativas
     feriado_amanha = "Feriado / Loja Fechada Amanhã (Urgência Máxima)" in perturbacoes_ativas
-    gestor = GestorBaseDadosTemporal(total_produtos=200, seed=2026)
-    data_ref = date.today()
-    rag_retriever = RecuperadorRAG()
-    meteo = obter_meteorologia_atual(modo_override=modo_meteo)
+    data_operacional = data_ref or date.today()
+    gestor = GestorBaseDadosTemporal(total_produtos=200, seed=seed)
+    rag_retriever = _obter_rag_deterministico(data_operacional, seed=seed)
+    meteo = _obter_meteo_deterministica(modo_meteo)
 
-    catalogo_raw, lotes_raw = gestor.gerar_dataset_temporal(data_ref=data_ref)
-    catalogo_copia, lotes_copia = _normalizar_catalogo_e_lotes(catalogo_raw, lotes_raw)
+    catalogo_copia, lotes_copia = _obter_dataset_base_deterministico(
+        gestor=gestor,
+        data_ref=data_operacional,
+        total_produtos=200,
+        seed=seed,
+    )
     catalogo_map = {p["produto_id"]: p for p in catalogo_copia}
 
-    # Perturbações aplicadas a todos os produtos/lotes (aparecem e são contabilizados no resto)
+    # Perturbações aplicadas de forma determinística a todos os produtos/lotes
     if meteo["fator_procura"] != 1.0:
         for p in catalogo_copia:
             if meteo["fator_procura"] < 1.0 or p.get("categoria") in ["bebidas", "fruta", "carne", "pescado"]:
@@ -528,7 +581,7 @@ def correr_simulacao(
         for lote in lotes_copia:
             if lote["dias_para_expirar"] <= 2:
                 lote["dias_para_expirar"] = 1
-                lote["data_validade"] = data_ref.isoformat()
+                lote["data_validade"] = data_operacional.isoformat()
     if "Pico de Stock Excedente em Frutas e Carne" in perturbacoes_ativas:
         fator_pico = 1.0 + PARAMETROS_LIDL["aumento_pico"]
         for lote in lotes_copia:
@@ -600,7 +653,7 @@ def correr_simulacao(
                         fecho_loja_2h,
                         rag_retriever,
                         perturbacoes_ativas,
-                        data_ref,
+                        data_operacional,
                         meteo,
                     ),
                 )
@@ -612,7 +665,11 @@ def correr_simulacao(
                 logs_cards.append(log_card)
 
     sacos_surpresa = construir_sacos_surpresa_equilibrados(
-        lotes_copia, catalogo_map, peso_alvo_kg=0.50, fator_producao=fator_sacos_dia
+        lotes_copia,
+        catalogo_map,
+        peso_alvo_kg=0.50,
+        fator_producao=fator_sacos_dia,
+        seed=seed,
     )
 
     qtd_em_sacos_por_lote: dict[str, float] = {}
@@ -670,7 +727,15 @@ def correr_simulacao(
                 logs_por_id[lid]["desconto_final"] = f"{int(desc_efetivo * 100)}%"
                 logs_por_id[lid]["preco_final"] = formatar_eur(preco_f)
 
-    db_ok, db_msg = gestor.registar_telemetria_sqlite(data_ref, lotes_copia, cenario_perturbacao)
+    chave_telemetria = (data_operacional.isoformat(), cenario_perturbacao)
+    if chave_telemetria not in _TELEMETRIA_REGISTADA:
+        db_ok, db_msg = gestor.registar_telemetria_sqlite(
+            data_operacional, lotes_copia, cenario_perturbacao
+        )
+        if db_ok:
+            _TELEMETRIA_REGISTADA.add(chave_telemetria)
+    else:
+        db_ok, db_msg = True, "Telemetria já registada para este cenário."
 
     # KPIs iniciais continuam a contabilizar todo o catálogo/lotes
     total_prods = len(catalogo_copia)
@@ -704,7 +769,7 @@ def correr_simulacao(
     snapshot = {
         "cenario": cenario_perturbacao,
         "hora": datetime.now().strftime("%H:%M"),
-        "data_str": data_ref.strftime("%d/%m/%Y"),
+        "data_str": data_operacional.strftime("%d/%m/%Y"),
         "meteorologia": meteo,
         "perturbacoes_ativas": list(perturbacoes_ativas),
         "resultados_simulacao": [dict(r) for r in resultados_finalizados],
@@ -731,7 +796,7 @@ def correr_simulacao(
         "catalogo_simulado": catalogo_copia,
         "sacos_surpresa_lista": sacos_surpresa,
         "cenario_ativo": cenario_perturbacao,
-        "data_referencia_ativa": data_ref,
+        "data_referencia_ativa": data_operacional,
         "meteorologia_ativa": meteo,
         "db_status": (db_ok, db_msg),
         "snapshot": snapshot,
@@ -1007,25 +1072,15 @@ def _simular_baseline_lidl(
     }
 
 
-def simular_horizonte_temporal(
-    dias_simulacao: int = 7,
-    modo_meteo: str = "Automático (Tempo Real - Coimbra)",
-    combinar_perturbacoes_aleatorias: bool = True,
-) -> dict:
-    qvd_kg_total = 0.0
-    qd_kg_total = 0.0
-    qr_kg_total = 0.0
-    qexp_kg_total = 0.0
-    plano_dias = []
-
-    rng = random.Random(2026)
-    gestor = GestorBaseDadosTemporal(total_produtos=200, seed=2026)
-    data_inicial = date.today()
-    rag_retriever = RecuperadorRAG()
-    catalogo_raw, lotes_raw = gestor.gerar_dataset_temporal(data_ref=data_inicial)
-    catalogo_base, lotes_ativos = _normalizar_catalogo_e_lotes(catalogo_raw, lotes_raw)
-    catalogo_base_map = {p["produto_id"]: p for p in catalogo_base}
-    lotes_iniciais_copia = copy.deepcopy(lotes_ativos)
+def _gerar_cenario_dia_deterministico(
+    dia_idx: int,
+    modo_meteo_base: str,
+    combinar_perturbacoes_aleatorias: bool,
+    seed: int = SEED_SIMULACAO_PADRAO,
+) -> tuple[list[str], str]:
+    """Devolve sempre as mesmas perturbações e meteorologia para cada dia_idx."""
+    if not combinar_perturbacoes_aleatorias:
+        return [], modo_meteo_base
 
     cenarios_possiveis = [
         [],
@@ -1036,11 +1091,46 @@ def simular_horizonte_temporal(
         ["A menos de 2 horas de fechar a loja.", "Quebra Repentina de Clientes (-50% Procura)"],
     ]
     modos_meteo_ciclo = [
-        modo_meteo,
+        modo_meteo_base,
         "Simular: Chuva Intensa / Temporal",
         "Simular: Calor Elevado (> 30°C)",
-        "Automático (Tempo Real - Coimbra)",
+        "Simular: Céu Limpo / Normal",
     ]
+
+    rng_dia = random.Random(f"{seed}-cenario-dia-{dia_idx}")
+    perturbs_dia = (
+        list(cenarios_possiveis[dia_idx % len(cenarios_possiveis)])
+        if dia_idx % 2 == 1
+        else list(rng_dia.choice(cenarios_possiveis[:3]))
+    )
+    meteo_dia_modo = modos_meteo_ciclo[dia_idx % len(modos_meteo_ciclo)]
+    return perturbs_dia, meteo_dia_modo
+
+
+def simular_horizonte_temporal(
+    dias_simulacao: int = 7,
+    modo_meteo: str = "Automático (Tempo Real - Coimbra)",
+    combinar_perturbacoes_aleatorias: bool = True,
+    seed: int = SEED_SIMULACAO_PADRAO,
+    data_ref: date | None = None,
+) -> dict:
+    qvd_kg_total = 0.0
+    qd_kg_total = 0.0
+    qr_kg_total = 0.0
+    qexp_kg_total = 0.0
+    plano_dias = []
+
+    gestor = GestorBaseDadosTemporal(total_produtos=200, seed=seed)
+    data_inicial = data_ref or date.today()
+    rag_retriever = _obter_rag_deterministico(data_inicial, seed=seed)
+    catalogo_base, lotes_ativos = _obter_dataset_base_deterministico(
+        gestor=gestor,
+        data_ref=data_inicial,
+        total_produtos=200,
+        seed=seed,
+    )
+    catalogo_base_map = {p["produto_id"]: p for p in catalogo_base}
+    lotes_iniciais_copia = copy.deepcopy(lotes_ativos)
 
     evolucao_diaria = []
     desperdicio_por_categoria: dict[str, float] = {}
@@ -1054,23 +1144,18 @@ def simular_horizonte_temporal(
 
     for dia_idx in range(dias_simulacao):
         data_corrente = date.fromordinal(data_inicial.toordinal() + dia_idx)
-
-        if combinar_perturbacoes_aleatorias:
-            perturbs_dia = (
-                cenarios_possiveis[dia_idx % len(cenarios_possiveis)]
-                if dia_idx % 2 == 1
-                else rng.choice(cenarios_possiveis[:3])
-            )
-            meteo_dia_modo = modos_meteo_ciclo[dia_idx % len(modos_meteo_ciclo)]
-        else:
-            perturbs_dia = []
-            meteo_dia_modo = modo_meteo
+        perturbs_dia, meteo_dia_modo = _gerar_cenario_dia_deterministico(
+            dia_idx=dia_idx,
+            modo_meteo_base=modo_meteo,
+            combinar_perturbacoes_aleatorias=combinar_perturbacoes_aleatorias,
+            seed=seed,
+        )
 
         fecho_2h = "A menos de 2 horas de fechar a loja." in perturbs_dia
         quebra_clientes = "Quebra Repentina de Clientes (-50% Procura)" in perturbs_dia
         feriado_amanha = "Feriado / Loja Fechada Amanhã (Urgência Máxima)" in perturbs_dia
         pico_stock = "Pico de Stock Excedente em Frutas e Carne" in perturbs_dia
-        meteo = obter_meteorologia_atual(modo_override=meteo_dia_modo)
+        meteo = _obter_meteo_deterministica(meteo_dia_modo)
 
         fator_meteo = meteo["fator_procura"]
         fator_clientes = 0.50 if quebra_clientes else 1.0
@@ -1156,7 +1241,11 @@ def simular_horizonte_temporal(
 
         lotes_by_id = {l["lote_id"]: l for l in lotes_ativos}
         sacos_dia = construir_sacos_surpresa_equilibrados(
-            lotes_ativos, catalogo_dia_map, peso_alvo_kg=0.50, fator_producao=fator_sacos_dia
+            lotes_ativos,
+            catalogo_dia_map,
+            peso_alvo_kg=0.50,
+            fator_producao=fator_sacos_dia,
+            seed=seed + dia_idx,
         )
         qtd_reservada_sacos: dict[str, float] = {}
         for saco in sacos_dia:
@@ -1185,12 +1274,13 @@ def simular_horizonte_temporal(
         desperdicadas_kg_dia = 0.0
         receita_dia = 0.0
 
-        # Procura diária por produto (descontada pelos Sacos Surpresa vendidos)
+        # Procura diária determinística por produto (descontada pelos Sacos Surpresa vendidos)
         procura_por_prod: dict[str, float] = {}
         for pid, prod in catalogo_dia_map.items():
             if _normalizar_categoria(prod.get("categoria"), default="outros") in CATEGORIAS_EXCLUIDAS_LIDL:
                 continue
-            procura_por_prod[pid] = prod.get("vendas_medias_diarias", 2.0) * rng.uniform(0.85, 1.15)
+            rng_prod = random.Random(f"{seed}-procura-{dia_idx}-{pid}")
+            procura_por_prod[pid] = prod.get("vendas_medias_diarias", 2.0) * rng_prod.uniform(0.85, 1.15)
 
         for lid, reservada in qtd_reservada_sacos.items():
             l = lotes_by_id.get(lid)
@@ -1198,8 +1288,9 @@ def simular_horizonte_temporal(
                 l["quantidade_disponivel"] = round(l["quantidade_disponivel"] + reservada, 2)
 
         taxa_venda_sacos = 0.65 if quebra_clientes else 0.90
-        for saco in sacos_dia:
-            vendido_saco = rng.random() <= taxa_venda_sacos
+        for idx_saco, saco in enumerate(sacos_dia):
+            rng_saco = random.Random(f"{seed}-saco-{dia_idx}-{idx_saco}")
+            vendido_saco = rng_saco.random() <= taxa_venda_sacos
             saco["vendido"] = vendido_saco
             if vendido_saco:
                 receita_dia += saco["preco_final"]
@@ -1434,7 +1525,12 @@ def simular_horizonte_temporal(
     qtar_kg_total = qvd_kg_total + qd_kg_total + qr_kg_total + qexp_kg_total
     ts_pct = ((qvd_kg_total + qd_kg_total + qr_kg_total) / max(0.01, qtar_kg_total)) * 100
 
-    baseline = _simular_baseline_lidl(catalogo_base, lotes_iniciais_copia, plano_dias)
+    baseline = _simular_baseline_lidl(
+        catalogo_base,
+        lotes_iniciais_copia,
+        plano_dias,
+        parametros={"semente": seed},
+    )
     prods_contabilizados = sum(
         1 for p in catalogo_base if _normalizar_categoria(p.get("categoria"), default="outros") not in CATEGORIAS_EXCLUIDAS_LIDL
     )

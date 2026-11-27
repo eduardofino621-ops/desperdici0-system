@@ -283,10 +283,15 @@ def injetar_css_global() -> None:
             text-align: left;
         }
         .resumo-quant-table th.col-right,
-        .resumo-quant-table td.col-right {
-            text-align: right;
+        .resumo-quant-table td.col-right,
+        .stTable td:not(:first-child),
+        .stTable th:not(:first-child) {
+            text-align: right !important;
             font-variant-numeric: tabular-nums;
             white-space: nowrap;
+        }
+        .ag-right-aligned-header .ag-header-cell-label {
+            justify-content: flex-end !important;
         }
         .rag-origem-banner {
             display: flex;
@@ -367,6 +372,98 @@ def injetar_css_global() -> None:
             color: var(--text-color);
             opacity: 0.88;
             text-align: justify;
+        }
+        .ts-info-wrapper {
+            position: relative;
+            display: block;
+            margin-bottom: 14px;
+            cursor: help;
+        }
+        .ts-info-box {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+            padding: 13px 16px;
+            border-radius: 8px;
+            background: rgba(28, 131, 225, 0.12);
+            border: 1px solid rgba(28, 131, 225, 0.28);
+            color: var(--text-color);
+            font-size: 14.5px;
+        }
+        .ts-info-hint {
+            font-size: 12px;
+            opacity: 0.72;
+            font-weight: 500;
+        }
+.ts-tooltip-card {
+            position: absolute;
+            top: calc(100% + 8px);
+            left: 0;
+            z-index: 999999;
+            width: min(680px, 92vw);
+            padding: 14px 16px;
+            border-radius: 10px;
+            background-color: #ffffff;
+            background-color: light-dark(#ffffff, #1e293b);
+            color: #0f172a;
+            color: light-dark(#0f172a, #f8fafc);
+            border: 1px solid #cbd5e1;
+            border-color: light-dark(#cbd5e1, #475569);
+            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+            transform: translateY(-4px);
+            transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s ease;
+        }
+        .ts-info-wrapper:hover .ts-tooltip-card,
+        .ts-info-wrapper:focus-within .ts-tooltip-card {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+        .ts-formula-box {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-family: 'Cambria Math', 'Times New Roman', Georgia, serif;
+            font-size: 16px;
+            font-weight: 700;
+            padding: 6px 14px;
+            border-radius: 7px;
+            background-color: #e0f2fe;
+            background-color: light-dark(#e0f2fe, #0f172a);
+            border: 1px solid #7dd3fc;
+            border-color: light-dark(#7dd3fc, #38bdf8);
+            margin-bottom: 10px;
+        }
+        .ts-frac {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            line-height: 1.15;
+            font-size: 14px;
+        }
+        .ts-frac-num {
+            border-bottom: 1.5px solid currentColor;
+            padding: 0 6px 2px 6px;
+        }
+        .ts-frac-den {
+            padding: 2px 6px 0 6px;
+        }
+        .ts-var-list {
+            margin: 0;
+            padding-left: 18px;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+        .ts-var-list li {
+            margin-bottom: 4px;
+        }
+        .ts-var-list li:last-child {
+            margin-bottom: 0;
         }
     </style>
     """, unsafe_allow_html=True)

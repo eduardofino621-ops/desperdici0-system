@@ -1,10 +1,76 @@
 import html
+import re
 
 import altair as alt
 import pandas as pd
 import streamlit as st
 
 from src.ui.styles import CORES_DECISAO
+
+_PADRAO_CELULA_NUMERICA = re.compile(
+    r"^[+\-−]?\s*\d[\d\s.,]*\s*(€|%|kg|g|un|l|ml|d|p\.p\.)?(\s*\([+\-−]?\s*\d[\d\s.,]*\s*(€|%|kg|p\.p\.)?\))?$",
+    re.IGNORECASE,
+)
+
+
+def _coluna_eh_numerica(serie: pd.Series) -> bool:
+    if pd.api.types.is_numeric_dtype(serie):
+        return True
+    valores = [
+        str(v).strip()
+        for v in serie.dropna()
+        if str(v).strip() not in ("", "—", "-", "N/D")
+    ]
+    if not valores:
+        return False
+    correspondencias = sum(1 for v in valores if _PADRAO_CELULA_NUMERICA.match(v))
+    return (correspondencias / len(valores)) >= 0.5
+
+
+def exibir_tabela_alinhada(
+    df: pd.DataFrame,
+    colunas_direita: list[str] | None = None,
+    hide_index: bool = True,
+    width: str = "stretch",
+    height: int | None = None,
+) -> None:
+    """Renderiza qualquer DataFrame em HTML com todas as colunas numéricas alinhadas à direita."""
+    df_exibir = df.copy() if hide_index else df.reset_index()
+
+    cols_dir = set(
+        [c for c in colunas_direita if c in df_exibir.columns]
+        if colunas_direita is not None
+        else [c for c in df_exibir.columns if _coluna_eh_numerica(df_exibir[c])]
+    )
+
+    estilo_sticky = "position:sticky;top:0;z-index:1;" if height is not None else ""
+    ths = "".join(
+        f'<th class="{"col-right" if col in cols_dir else "col-left"}" style="{estilo_sticky}">'
+        f"{html.escape(str(col))}</th>"
+        for col in df_exibir.columns
+    )
+
+    trs = []
+    for _, row in df_exibir.iterrows():
+        celulas = []
+        for col in df_exibir.columns:
+            eh_dir = col in cols_dir
+            classe = "col-right" if eh_dir else "col-left"
+            estilo = ' style="white-space:nowrap;"' if eh_dir else ""
+            val = "" if pd.isna(row[col]) else str(row[col])
+            celulas.append(f'<td class="{classe}"{estilo}>{html.escape(val)}</td>')
+        trs.append(f"<tr>{''.join(celulas)}</tr>")
+
+    estilo_wrap = f"max-height:{int(height)}px;overflow-y:auto;" if height is not None else ""
+    largura_wrap = "width:100%;" if width == "stretch" else ""
+    tabela_html = (
+        f'<div class="resumo-quant-wrap" style="{largura_wrap}{estilo_wrap}">'
+        f'<table class="resumo-quant-table">'
+        f"<thead><tr>{ths}</tr></thead>"
+        f"<tbody>{''.join(trs)}</tbody>"
+        f"</table></div>"
+    )
+    st.markdown(tabela_html, unsafe_allow_html=True)
 
 
 def formatar_meteo_rotulo(meteo: dict | None) -> tuple[str, str]:

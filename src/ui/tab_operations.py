@@ -1,4 +1,6 @@
 import html
+import re
+
 import altair as alt
 import pandas as pd
 from st_aggrid import AgGrid, ColumnsAutoSizeMode, GridOptionsBuilder, JsCode
@@ -12,6 +14,7 @@ from src.simulation.orchestrator import (
     simular_horizonte_temporal,
 )
 from src.ui.components import (
+    exibir_tabela_alinhada,
     mostrar_popup_agentes,
     obter_dado_pagina,
     renderizar_analise_decisoes,
@@ -21,6 +24,37 @@ from src.ui.styles import CATEGORIAS_UI
 
 COLUNA_DECISAO_AGENTES = "Decisão dos agentes"
 COLUNA_LEGADA_CSP = "Consultar Validação CSP"
+
+COLUNAS_NUMERICAS_AGGRID = {
+    "Stock",
+    "Dias",
+    "PVP",
+    "PUM",
+    "Campanha",
+    "Desc. Validade",
+    "Preço Ativo",
+}
+
+_REGEX_VALOR_NUMERICO = re.compile(
+    r"^[+\-−]?\s*\d[\d\s.,]*\s*(€|%|kg|g|un|l|ml|d)?$",
+    re.IGNORECASE,
+)
+
+
+def _eh_coluna_numerica_aggrid(nome_coluna: str, serie: pd.Series) -> bool:
+    if nome_coluna in COLUNAS_NUMERICAS_AGGRID:
+        return True
+    if pd.api.types.is_numeric_dtype(serie):
+        return True
+    valores = [
+        str(v).strip()
+        for v in serie.dropna()
+        if str(v).strip() not in ("", "—", "-", "N/D")
+    ]
+    if not valores:
+        return False
+    correspondencias = sum(1 for v in valores if _REGEX_VALOR_NUMERICO.match(v))
+    return (correspondencias / len(valores)) >= 0.5
 
 
 def _alternar_cat_tab1(cat_key: str) -> None:
@@ -312,13 +346,28 @@ def _renderizar_tabela_operacoes() -> None:
         if col_nome in (COLUNA_DECISAO_AGENTES, "_click_seq"):
             continue
         max_chars = int(df_grid[col_nome].astype(str).str.len().max())
+        eh_numerica = _eh_coluna_numerica_aggrid(col_nome, df_grid[col_nome])
+        kwargs_numericos = (
+            {
+                "type": ["numericColumn", "rightAligned"],
+                "cellClass": "ag-right-aligned-cell",
+                "cellStyle": {
+                    "textAlign": "right",
+                    "justifyContent": "flex-end",
+                    "fontVariantNumeric": "tabular-nums",
+                },
+                "headerClass": "ag-right-aligned-header",
+            }
+            if eh_numerica
+            else {}
+        )
         if col_nome == "Validade":
             gb.configure_column(col_nome, width=110, minWidth=110, valueFormatter=fmt_data_pt)
         elif col_nome == "Dias":
-            gb.configure_column(col_nome, width=70, minWidth=70, valueFormatter=fmt_dias)
+            gb.configure_column(col_nome, width=75, minWidth=75, valueFormatter=fmt_dias, **kwargs_numericos)
         else:
             larg = int(max(85, min(360, max_chars * 8.2 + 26)))
-            gb.configure_column(col_nome, width=larg, minWidth=larg)
+            gb.configure_column(col_nome, width=larg, minWidth=larg, **kwargs_numericos)
 
     gb.configure_column("_click_seq", hide=True)
     gb.configure_column(
@@ -344,6 +393,15 @@ def _renderizar_tabela_operacoes() -> None:
             "color": "var(--text-color) !important",
             "font-weight": "600 !important",
             "line-height": "1.2 !important",
+        },
+        ".ag-right-aligned-header .ag-header-cell-label": {
+            "justify-content": "flex-end !important",
+            "text-align": "right !important",
+        },
+        ".ag-right-aligned-cell": {
+            "text-align": "right !important",
+            "justify-content": "flex-end !important",
+            "font-variant-numeric": "tabular-nums !important",
         },
         ".ag-row": {
             "background-color": "var(--background-color) !important",
@@ -560,12 +618,26 @@ def renderizar_resultados_acelerada() -> None:
         st.markdown("### 📊 Desempenho Global (Desperdíci0%)")
         ts_val = res.get("ts_pct", 0.0)
         atingiu_meta = ts_val > 90.0
-        estado_meta = "Meta atingida (> 90%)" if atingiu_meta else "Abaixo da meta (≤ 90%)"
 
         m1, m2, m3, m4, m5 = st.columns(5)
         with m1:
             st.metric(label="Taxa de Salvamento (TS)", value=f"{formatar_numero_pt(ts_val, 1)}%")
-            st.caption(estado_meta)
+            if atingiu_meta:
+                st.markdown(
+                    '<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;'
+                    'border-radius:999px;font-size:12px;font-weight:700;'
+                    'background:rgba(16,185,129,0.16);color:#10b981;border:1px solid rgba(16,185,129,0.45);">'
+                    '✅ Meta atingida (&gt; 90%)</span>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(
+                    '<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;'
+                    'border-radius:999px;font-size:12px;font-weight:700;'
+                    'background:rgba(239,68,68,0.16);color:#ef4444;border:1px solid rgba(239,68,68,0.45);">'
+                    '⚠️ Abaixo da meta (≤ 90%)</span>',
+                    unsafe_allow_html=True,
+                )
         with m2:
             st.metric(
                 label="Total Vendido",
@@ -589,12 +661,44 @@ def renderizar_resultados_acelerada() -> None:
                 value=f"{formatar_numero_pt(res['taxa_desperdicio_pct'], 1)}%",
             )
 
-        st.info(
-            f"📐 **TS = ((QVD + QD + QR) / QTAR) × 100**  |  "
-            f"**QVD:** {formatar_numero_pt(res.get('qvd_kg', 0.0), 1)} kg  ·  "
-            f"**QD:** {formatar_numero_pt(res.get('qd_kg', 0.0), 1)} kg  ·  "
-            f"**QR:** {formatar_numero_pt(res.get('qr_kg', 0.0), 1)} kg  ·  "
-            f"**QTAR:** {formatar_numero_pt(res.get('qtar_kg', 0.0), 1)} kg"
+        qvd_str = formatar_numero_pt(res.get("qvd_kg", 0.0), 1)
+        qd_str = formatar_numero_pt(res.get("qd_kg", 0.0), 1)
+        qr_str = formatar_numero_pt(res.get("qr_kg", 0.0), 1)
+        qtar_str = formatar_numero_pt(res.get("qtar_kg", 0.0), 1)
+
+        st.markdown(
+            f"""
+            <div class="ts-info-wrapper" tabindex="0">
+                <div class="ts-info-box">
+                    <span>
+                        <strong>QVD:</strong> {qvd_str} kg &nbsp;·&nbsp;
+                        <strong>QD:</strong> {qd_str} kg &nbsp;·&nbsp;
+                        <strong>QR:</strong> {qr_str} kg &nbsp;·&nbsp;
+                        <strong>QTAR:</strong> {qtar_str} kg
+                    </span>
+                    <span class="ts-info-hint">ℹ️ Passe o cursor para ver a fórmula</span>
+                </div>
+                <div class="ts-tooltip-card">
+                    <div class="ts-formula-box">
+                        <span>TS</span>
+                        <span>=</span>
+                        <span class="ts-frac">
+                            <span class="ts-frac-num">QVD + QD + QR</span>
+                            <span class="ts-frac-den">QTAR</span>
+                        </span>
+                        <span>&times; 100</span>
+                    </div>
+                    <ul class="ts-var-list">
+                        <li><strong>TS (Taxa de Salvamento):</strong> Percentagem de stock em risco de expirar que foi aproveitado e evitado de ir para o lixo.</li>
+                        <li><strong>QVD (Quantidade Vendida com Desconto):</strong> Massa (kg) escoada através de descontos dinâmicos de validade (ESL) e <em>Sacos Surpresa</em>.</li>
+                        <li><strong>QD (Quantidade Doada):</strong> Massa (kg) encaminhada para instituições de solidariedade social e cozinha interna.</li>
+                        <li><strong>QR (Quantidade para Ração / Valorização):</strong> Massa (kg) de excedentes (ex.: padaria/pastelaria) valorizada para produção de ração animal.</li>
+                        <li><strong>QTAR (Quantidade Total em Risco):</strong> Total de stock crítico que atingiu o fim de vida útil no horizonte simulado (QVD + QD + QR + Desperdício).</li>
+                    </ul>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
 
         df_evo = pd.DataFrame(res["evolucao_diaria"]).copy()
@@ -607,7 +711,12 @@ def renderizar_resultados_acelerada() -> None:
             if col_num in df_evo.columns:
                 df_evo[col_num] = df_evo[col_num].apply(lambda v: formatar_numero_pt(float(v), casas))
 
-        st.dataframe(df_evo, hide_index=True, width="stretch")
+        exibir_tabela_alinhada(
+            df_evo,
+            colunas_direita=["Vendidas", "Doação / Cozinha", "Desperdício (Lixo)", "Receita (€)"],
+            hide_index=True,
+            width="stretch",
+        )
 
         base = res.get("comparacao_baseline")
         if base:
@@ -727,7 +836,12 @@ def renderizar_resultados_acelerada() -> None:
                     "Diferença (Desperdíci0% vs. Lidl)": _formatar_delta_pt(ganho_lucro, "€", 2),
                 },
             ])
-            st.dataframe(df_comp, hide_index=True, width="stretch")
+            exibir_tabela_alinhada(
+                df_comp,
+                colunas_direita=["Lidl", "Desperdíci0%", "Diferença (Desperdíci0% vs. Lidl)"],
+                hide_index=True,
+                width="stretch",
+            )
 
             desp_nosso = res.get("desperdicio_por_categoria") or {}
             desp_trad = (res.get("comparacao_baseline") or {}).get("desperdicio_por_categoria") or {}

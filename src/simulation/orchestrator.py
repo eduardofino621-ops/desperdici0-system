@@ -20,7 +20,7 @@ from src.simulation.weather_service import obter_meteorologia_atual
 
 CATEGORIAS_EXCLUIDAS_LIDL = frozenset({})
 
-SEED_SIMULACAO_PADRAO = 42
+SEED_SIMULACAO_PADRAO = 43
 
 _CACHE_DATASET_BASE: dict[tuple[int, int, str], tuple[list[dict], list[dict]]] = {}
 _CACHE_METEO_AUTO: dict[str, dict] = {}

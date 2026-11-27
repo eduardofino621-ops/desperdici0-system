@@ -1,3 +1,10 @@
+from src.csp.constraints import (
+    CATEGORIAS_PADARIA_PASTELARIA,
+    _normalizar_categoria,
+    eh_elegivel_saco_padaria,
+    eh_padaria_elegivel_racao,
+    validar_regras_csp,
+)
 import copy
 import math
 from concurrent.futures import ThreadPoolExecutor
@@ -281,14 +288,14 @@ def aplicar_regras_pos_criacao_sacos(
                 and tipo_val == "preferencia_antes"
             ):
                 destino_item = "doacao_externa"
-            elif cat in CATEGORIAS_PADARIA_PASTELARIA:
+            elif eh_padaria_elegivel_racao(prod):
                 destino_item = "racao_animal"
             elif dias <= 0 and tipo_val == "consumir_ate":
                 destino_item = "descarte_obrigatorio"
             else:
                 destino_item = (
                     "racao_animal"
-                    if cat in CATEGORIAS_PADARIA_PASTELARIA
+                    if eh_padaria_elegivel_racao(prod)
                     else "descarte_obrigatorio"
                 )
 
@@ -1336,31 +1343,22 @@ def simular_horizonte_temporal(
                     cat_saco = prod_saco.get("categoria", "padaria")
                     l["quantidade_disponivel"] = round(l["quantidade_disponivel"] - abat, 2)
 
-                    # 50% para doação e os restantes 50% para o lixo
-                    if prod_saco.get("unidade_medida") == "kg":
-                        qtd_doada = round(abat * 0.50, 2)
-                    else:
-                        qtd_doada = float(int(abat * 0.50 + 1e-9))
-                    qtd_lixo = round(max(0.0, abat - qtd_doada), 2)
+                    kg_abat = abat * _peso_unitario_produto(prod_saco)
 
-                    kg_doada = qtd_doada * _peso_unitario_produto(prod_saco)
-                    kg_lixo = qtd_lixo * _peso_unitario_produto(prod_saco)
-
-                    if kg_doada > 0:
-                        qd_kg_total += kg_doada
-                        doadas_kg_dia += kg_doada
+                    if eh_padaria_elegivel_racao(prod_saco):
+                        qd_kg_total += kg_abat
+                        racao_kg_dia += kg_abat
                         _registar_salvamento_categoria(
-                            salvamento_por_categoria, cat_saco, "Doação / Cozinha", kg_doada
+                            salvamento_por_categoria, cat_saco, "Ração / Valorização", kg_abat
                         )
-
-                    if kg_lixo > 0:
-                        qexp_kg_total += kg_lixo
-                        desperdicadas_kg_dia += kg_lixo
+                    else:
+                        qexp_kg_total += kg_abat
+                        desperdicadas_kg_dia += kg_abat
                         cat_label = cat_saco.capitalize()
                         desperdicio_por_categoria[cat_label] = round(
-                            desperdicio_por_categoria.get(cat_label, 0.0) + kg_lixo, 2
+                            desperdicio_por_categoria.get(cat_label, 0.0) + kg_abat, 2
                         )
-                        custo_desperdicio_total += qtd_lixo * (
+                        custo_desperdicio_total += abat * (
                             prod_saco.get("custo_aquisicao", 0.0) + prod_saco.get("custo_descarte", 0.0)
                         )
 
@@ -1474,15 +1472,17 @@ def simular_horizonte_temporal(
                 cat_label = cat_raw.capitalize()
 
                 if cat_raw in CATEGORIAS_PADARIA_PASTELARIA:
-                    kg_pad = qtd_exp * peso_unit
-                    qd_kg_total += kg_pad
-                    racao_kg_dia += kg_pad
-                    _registar_salvamento_categoria(
-                        salvamento_por_categoria, cat_raw, "Ração / Valorização", kg_pad
-                    )
-                    lote["quantidade_disponivel"] = 0.0
-                    lote["estado"] = "encaminhado"
-                    continue
+                 if eh_padaria_elegivel_racao(prod):
+                     kg_pad = qtd_exp * peso_unit
+                     qd_kg_total += kg_pad
+                     racao_kg_dia += kg_pad
+                     _registar_salvamento_categoria(
+                         salvamento_por_categoria, cat_raw, "Ração / Valorização", kg_pad
+                     )
+                     lote["quantidade_disponivel"] = 0.0
+                     lote["estado"] = "encaminhado"
+                     continue
+                 # Artigos excluídos de ração seguem para o bloco de desperdício (lixo) abaixo
 
                 if tipo_val == "preferencia_antes":
                     qtd_doada = (

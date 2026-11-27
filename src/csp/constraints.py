@@ -2,6 +2,27 @@ import math
 
 CATEGORIAS_PADARIA_PASTELARIA = frozenset({"padaria", "pastelaria"})
 
+PADARIA_EXCLUIDA_RACAO = (
+    "croissant brioche",
+    "croissant folhado",
+    "croissant com chocolate",
+    "pão com chouriço",
+    "bolo do caco",
+    "pão de leite",
+    "pão de deus",
+    "regueifa",
+    "pão de centeio com nozes",
+)
+
+
+def eh_padaria_elegivel_racao(produto: dict) -> bool:
+    """Devolve True se for padaria/pastelaria simples elegível para farinha de ração animal."""
+    cat = _normalizar_categoria(produto.get("categoria", "geral"))
+    if cat not in CATEGORIAS_PADARIA_PASTELARIA:
+        return False
+    nome_l = str(produto.get("nome", "")).strip().lower()
+    return not any(termo in nome_l for termo in PADARIA_EXCLUIDA_RACAO)
+
 
 def _normalizar_categoria(categoria: str | None, default: str = "geral") -> str:
     cat = (categoria or default).strip().lower()
@@ -65,7 +86,7 @@ def validar_regras_csp(
     desc_saco_alvo = 0.45
 
     if estado_lote == "expirado" or dias <= 0:
-        if categoria in CATEGORIAS_PADARIA_PASTELARIA:
+        if eh_padaria_elegivel_racao(produto):
             erros.append(
                 "Bloqueio CSP Padaria/Pastelaria: Artigo em fim de vida útil (0 dias); "
                 "encaminhado para farinha de ração animal."
@@ -126,19 +147,26 @@ def validar_regras_csp(
 
     # Regra 3A: Padaria/Pastelaria NUNCA vai para cozinha interna (higiene e segurança alimentar)
     if categoria in CATEGORIAS_PADARIA_PASTELARIA and destino_ajustado == "cozinha_interna":
-        erros.append(
-            "Bloqueio CSP Higiene: Padaria/pastelaria exposta ao público não pode entrar na cozinha interna; "
-            "redirecionada para farinha de ração animal."
-        )
-        destino_ajustado = "racao_animal"
+      if eh_padaria_elegivel_racao(produto):
+          erros.append(
+              "Bloqueio CSP Higiene: Padaria/pastelaria exposta ao público não pode entrar na cozinha interna; "
+              "redirecionada para farinha de ração animal."
+          )
+          destino_ajustado = "racao_animal"
+      else:
+          erros.append(
+              "Bloqueio CSP Higiene: Artigo de padaria/pastelaria excluído de cozinha interna e ração animal; "
+              "redirecionado para prateleira."
+          )
+          destino_ajustado = "prateleira_desconto"
 
     # Regra 3B: Apenas padaria/pastelaria pode ser encaminhada para farinha para ração animal
-    if categoria not in CATEGORIAS_PADARIA_PASTELARIA and destino_ajustado == "racao_animal":
-        erros.append(
-            "Restrição CSP Logística: Apenas excedentes de padaria e pastelaria podem ser encaminhados "
-            "para farinha de ração animal."
-        )
-        destino_ajustado = "prateleira_desconto"
+    if destino_ajustado == "racao_animal" and not eh_padaria_elegivel_racao(produto):
+      erros.append(
+          "Restrição CSP Segurança/SANDACH: Apenas pão simples elegível pode ser encaminhado "
+          "para farinha de ração animal (excluídos artigos com chocolate, carne, ovos/gorduras ou frutos secos)."
+      )
+      destino_ajustado = "prateleira_desconto"
 
     # Regra 3C: Apenas padaria/pastelaria pode ser alocada a Sacos Surpresa
     if categoria not in CATEGORIAS_PADARIA_PASTELARIA and destino_ajustado == "sacos_surpresa":

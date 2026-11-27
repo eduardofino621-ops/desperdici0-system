@@ -1,3 +1,9 @@
+from src.csp.constraints import (
+    CATEGORIAS_PADARIA_PASTELARIA,
+    _normalizar_categoria,
+    eh_elegivel_saco_padaria,
+    eh_padaria_elegivel_racao,
+)
 import os
 from pydantic import BaseModel, Field
 from langchain_openai import ChatOpenAI
@@ -41,26 +47,34 @@ def agente_logistica_doacao(state: dict) -> dict:
     parecer_inv = state.get("parecer_inventario", "")
 
     if dias <= 0:
-        if categoria in CATEGORIAS_PADARIA_PASTELARIA:
-            return {
-                "destino_proposto": "racao_animal",
-                "razao_logistica": (
-                    "Padaria/pastelaria em fim de vida útil encaminhada para instituição de transformação "
-                    "em farinha para ração animal."
-                ),
-            }
-        if tipo_validade == "preferencia_antes":
-            return {
-                "destino_proposto": "doacao_externa",
-                "razao_logistica": (
-                    "Artigo com data de durabilidade mínima ('Consumir de preferência antes de') "
-                    "retirado de venda e encaminhado para doação externa."
-                ),
-            }
-        return {
-            "destino_proposto": "descarte_obrigatorio",
-            "razao_logistica": "Lote expirado ('Consumir até'); retirada imediata obrigatória.",
-        }
+     if eh_padaria_elegivel_racao(produto):
+         return {
+             "destino_proposto": "racao_animal",
+             "razao_logistica": (
+                 "Pão simples elegível em fim de vida útil encaminhado a 100% para "
+                 "transformação em farinha para ração animal."
+             ),
+         }
+     if categoria in CATEGORIAS_PADARIA_PASTELARIA:
+         return {
+             "destino_proposto": "descarte_obrigatorio",
+             "razao_logistica": (
+                 "Artigo de padaria/pastelaria excluído de ração animal por composição "
+                 "(gorduras, chocolate, carne, alho ou frutos secos); encaminhado para descarte."
+             ),
+         }
+     if tipo_validade == "preferencia_antes":
+         return {
+             "destino_proposto": "doacao_externa",
+             "razao_logistica": (
+                 "Artigo com data de durabilidade mínima ('Consumir de preferência antes de') "
+                 "retirado de venda e encaminhado para doação externa."
+             ),
+         }
+     return {
+         "destino_proposto": "descarte_obrigatorio",
+         "razao_logistica": "Lote expirado ('Consumir até'); retirada imediata obrigatória.",
+     }
 
     if categoria in CATEGORIAS_PADARIA_PASTELARIA:
         lote_id = lote.get("lote_id", "")

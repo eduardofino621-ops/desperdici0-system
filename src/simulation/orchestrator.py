@@ -20,7 +20,7 @@ from src.simulation.weather_service import obter_meteorologia_atual
 
 CATEGORIAS_EXCLUIDAS_LIDL = frozenset({})
 
-SEED_SIMULACAO_PADRAO = 42
+SEED_SIMULACAO_PADRAO = 43
 SEED_CATALOGO_BASE = 2026
 
 _CACHE_DATASET_BASE: dict[tuple[int, int, str], tuple[list[dict], list[dict]]] = {}
@@ -30,7 +30,7 @@ _TELEMETRIA_REGISTADA: set[tuple[str, str]] = set()
 
 MAPA_DESTINOS = {
     "prateleira_desconto": "Prateleira (Etiqueta ESL)",
-    "sacos_surpresa": "Sacos Surpresa (Fim de Dia)",
+    "sacos_surpresa": "Sacos Surpresa",
     "cozinha_interna": "Cozinha Interna (Retirado)",
     "descarte_obrigatorio": "Desperdício (Ida para o Lixo)",
     "doacao_externa": "Doação Externa (Instituições de Caridade)",
@@ -714,7 +714,7 @@ def correr_simulacao(
         elif qtd_nos_sacos + 1e-9 < qtd_total:
             sacos_fmt = formatar_stock(qtd_nos_sacos, unidade)
             total_fmt = formatar_stock(qtd_total, unidade)
-            rotulo_parcial = f"Sacos Surpresa ({sacos_fmt}/{total_fmt}) + Prateleira"
+            rotulo_parcial = f"Sacos Surpresa"
             lote_sobra = dict(lote)
             lote_sobra["destino_final"] = "prateleira_desconto"
             lote_sobra["desconto_validade"] = 0.0

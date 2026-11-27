@@ -1326,34 +1326,36 @@ def simular_horizonte_temporal(
                     if int(l.get("dias_para_expirar", 1)) > 1:
                         continue
 
-                    aplicar_regras_pos_criacao_sacos([saco], lotes_by_id, catalogo_dia_map)
-                    dest_pos = saco.get("destino_pos_saco", "racao_animal")
                     prod_saco = catalogo_dia_map.get(l["produto_id"], {})
                     cat_saco = prod_saco.get("categoria", "padaria")
-                    kg_abat = abat * _peso_unitario_produto(prod_saco)
                     l["quantidade_disponivel"] = round(l["quantidade_disponivel"] - abat, 2)
 
-                    if dest_pos == "doacao_externa":
-                        qd_kg_total += kg_abat
-                        doadas_kg_dia += kg_abat
-                        _registar_salvamento_categoria(
-                            salvamento_por_categoria, cat_saco, "Doação / Cozinha", kg_abat
-                        )
-                    elif dest_pos == "racao_animal":
-                        qd_kg_total += kg_abat
-                        racao_kg_dia += kg_abat
-                        _registar_salvamento_categoria(
-                            salvamento_por_categoria, cat_saco, "Ração / Valorização", kg_abat
-                        )
+                    # 40% para doação e os restantes 60% para o lixo
+                    if prod_saco.get("unidade_medida") == "kg":
+                        qtd_doada = round(abat * 0.40, 2)
                     else:
-                        qexp_kg_total += kg_abat
-                        desperdicadas_kg_dia += kg_abat
+                        qtd_doada = float(int(abat * 0.40 + 1e-9))
+                    qtd_lixo = round(max(0.0, abat - qtd_doada), 2)
+
+                    kg_doada = qtd_doada * _peso_unitario_produto(prod_saco)
+                    kg_lixo = qtd_lixo * _peso_unitario_produto(prod_saco)
+
+                    if kg_doada > 0:
+                        qd_kg_total += kg_doada
+                        doadas_kg_dia += kg_doada
+                        _registar_salvamento_categoria(
+                            salvamento_por_categoria, cat_saco, "Doação / Cozinha", kg_doada
+                        )
+
+                    if kg_lixo > 0:
+                        qexp_kg_total += kg_lixo
+                        desperdicadas_kg_dia += kg_lixo
                         cat_label = cat_saco.capitalize()
                         desperdicio_por_categoria[cat_label] = round(
-                            desperdicio_por_categoria.get(cat_label, 0.0) + kg_abat, 2
+                            desperdicio_por_categoria.get(cat_label, 0.0) + kg_lixo, 2
                         )
-                        custo_desperdicio_total += abat * (
-                            prod_saco.get("custo_aquisicao", 0.0) + prod_saco.get("custo_descarte", 0.0)
+                        custo_desperdicio_total += qtd_lixo * (
+                                prod_saco.get("custo_aquisicao", 0.0) + prod_saco.get("custo_descarte", 0.0)
                         )
 
         lotes_por_prod: dict[str, list[dict]] = {}

@@ -122,7 +122,7 @@ def agente_logistica_doacao(state: dict) -> dict:
     racio_excesso_real = quantidade / max(0.1, procura_com_desconto)
 
     # 1. Último dia de carne/pescado sem escoamento previsto -> Cozinha Interna
-    if categoria in ["pescado", "carne"] and dias <= 1 and (racio_excesso_real > 1.35 or fecho_loja_2h):
+    if categoria in ["pescado", "carne"] and dias <= 1 and (racio_excesso_real > 1.05 or fecho_loja_2h):
         return {
             "destino_proposto": "cozinha_interna",
             "razao_logistica": (
@@ -133,7 +133,7 @@ def agente_logistica_doacao(state: dict) -> dict:
         }
 
     # 2. Doação externa IPSS apenas na última janela elegível (dias == 2) e perante excedente real
-    fator_doacao_critica = 1.65 if categoria in ["laticinios", "charcutaria", "pescado", "carne"] else 2.0
+    fator_doacao_critica = 1.25 if categoria in ["laticinios", "charcutaria", "pescado", "carne", "fruta"] else 1.50
     if excesso > 0 and dias == 2 and racio_excesso_real > fator_doacao_critica:
         return {
             "destino_proposto": "doacao_externa",

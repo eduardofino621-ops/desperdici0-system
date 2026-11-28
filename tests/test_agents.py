@@ -133,3 +133,5 @@ def test_otimizador_desconto_discreto_respeita_teto(produto_carne):
         custo_descarte=produto_carne["custo_descarte"],
         desconto_campanha=0.0,
         teto_efetivo=0.60,
+    )
+    assert 0.0 <= desc <= 0.60
